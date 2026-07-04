@@ -169,7 +169,7 @@
 <div id="tabs">
   <button class="tab active" id="tabAsm">🏗 Montaj</button>
   <button class="tab" id="tabDesign">✏️ Parça Tasarımı</button>
-  <span style="align-self:center;font-size:10px;color:var(--muted);padding:0 8px">v7.4</span>
+  <span style="align-self:center;font-size:10px;color:var(--muted);padding:0 8px">v7.5</span>
 </div>
 
 <div id="designPanel" style="display:none">
@@ -253,6 +253,9 @@
       <button id="modeT" class="active">✥ Taşı (G)</button>
       <button id="modeR">⟳ Döndür (R)</button>
       <button id="btnPattern" title="Doğrusal/dairesel dizi">▦ Dizi</button>
+    </div>
+    <div class="btnrow" style="margin-top:6px">
+      <button id="btnFaceSketch" title="Bu parçanın üst yüzeyine çizim açıp kabartma (katı) ekle">🔲 Yüzeye Çizim Ekle</button>
     </div>
   </div>
 
@@ -2122,6 +2125,15 @@ function skDraw() {
   skx.fillStyle = '#f0883e'; skx.fillText('↑ ' + AX[1] + '  (döndürme ekseni)', cx + 8, 18);
   skx.font = '11px Segoe UI'; skx.fillStyle = '#8b949e';
   skx.fillText(`Düzlem: ${PTR}  ·  derinlik → ${AX[2]} ekseni`, 12, h - 14);
+  // yüzeye çizim referansı: ebeveyn parçanın sınır hattı (gri kesikli)
+  if (bossParentId) {
+    const par = byId(bossParentId);
+    if (par && par.type === 'custom' && (par.params.plane || 'front') === 'front') {
+      skx.strokeStyle = 'rgba(139,148,158,.55)'; skx.lineWidth = 1.5; skx.setLineDash([5, 4]);
+      for (const rs of par.params.shapes || []) { if (rs.hole) continue; skPath(rs); skx.stroke(); }
+      skx.setLineDash([]);
+    }
+  }
   // tamamlanmış şekiller
   for (const s of skShapes) {
     skPath(s);
@@ -2445,7 +2457,8 @@ $('tCut').onclick = () => {
   skDraw();
 };
 
-let editingId = null;   // "Çizimi Düzenle" ile açılan parçanın id'si
+let editingId = null;       // "Çizimi Düzenle" ile açılan parçanın id'si
+let bossParentId = null;    // "Yüzeye Çizim" ile kabartma eklenecek ebeveyn parça
 
 function addCustomPart(op) {
   if (!skShapes.some(s => !s.hole)) return skStatus('⚠ Önce kapalı bir profil çiz!');
@@ -2469,6 +2482,21 @@ function addCustomPart(op) {
   }
   const p = addPart('custom', { op, depth, plane: skPlane, shapes: JSON.parse(JSON.stringify(skShapes)), color: 0x9fb4c8 });
   if (nm) p.name = nm;
+  // YÜZEYE ÇİZİM: kabartmayı ebeveynin üst (+Z) yüzeyine oturt ve kilitle
+  if (bossParentId && byId(bossParentId)) {
+    const par = byId(bossParentId);
+    if (!nm) p.name = par.name + ' · Kabartma';
+    p.params.color = 0xb6c6d6; rebuildContent(p);
+    const box = new THREE.Box3().setFromObject(par.obj);
+    p.obj.quaternion.identity();
+    p.obj.position.set(par.obj.position.x, par.obj.position.y, box.max.z + depth / 2);
+    addLink('lock', par.id, p.id);           // ebeveyne kilitli → birlikte hareket
+    bossParentId = null;
+    setTab('asm');
+    sel = [p.id]; refreshSel(); refreshAll(); save(); fitView();
+    statusMsg(`✔ <b>${p.name}</b> — ${par.name} yüzeyine kabartma eklendi (${fmt(depth, 0)} mm). Ebeveyne kilitli.`, 'ok');
+    return;
+  }
   setTab('asm');
   sel = [p.id]; refreshSel(); refreshAll(); save(); fitView();
   statusMsg(`✔ <b>${p.name}</b> montaja eklendi (${op === 'revolve' ? 'döndürme' : 'ekstrüzyon ' + fmt(depth, 0) + ' mm'}). Diğer parçalar gibi taşıyabilir, mile takabilirsin.`, 'ok');
@@ -2490,6 +2518,19 @@ $('btnEditSketch').onclick = () => {
   skStatus(`✏️ <b>${p.name}</b> düzenleniyor — değiştir, sonra Ekstrüzyon/Döndür ile <b>güncelle</b>.`);
   skDraw();
 };
+$('btnFaceSketch').onclick = () => {
+  if (!sel.length) return statusMsg('⚠ Önce üzerine çizim yapılacak parçayı seç.', 'info');
+  bossParentId = sel[0]; editingId = null;
+  const par = byId(bossParentId);
+  skShapes = []; skUndoStack = []; skPts = []; skSel = null; skHover = null;
+  skPlane = 'front'; setPlaneUI();          // üst/ön yüzey = +Z
+  skCutMode = false; setCutUI();
+  $('dName').value = ''; $('dDepth').value = 8;
+  setTab('design');
+  $('tRect').click();
+  skStatus(`🔲 <b>${par ? par.name : ''}</b> yüzeyine çizim — profili çiz, <b>Ekstrüzyon</b> ile kabartma ekle. Gri kesikli hat parçanın sınırıdır.`);
+  skDraw();
+};
 $('fExtrude').onclick = () => addCustomPart('extrude');
 $('fRevolve').onclick = () => addCustomPart('revolve');
 
@@ -2503,7 +2544,7 @@ function setTab(t) {
   $('designPanel').style.display = d ? '' : 'none';
   sk.style.display = d ? 'block' : 'none';   // CSS'teki display:none kuralını inline 'block' ezer
   if (d && !skTool) $('tRect').click();       // boş araçla başlama — ölü tıklama olmasın
-  if (!d) editingId = null;                   // montaja dönünce düzenleme modu biter
+  if (!d) { editingId = null; bossParentId = null; }   // montaja dönünce düzenleme/kabartma modu biter
   if (d) { guideWasVisible = $('guide').style.display !== 'none'; $('guide').style.display = 'none'; }
   else if (guideWasVisible) $('guide').style.display = '';
   $('hint').innerHTML = d
