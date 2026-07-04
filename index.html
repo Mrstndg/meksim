@@ -169,7 +169,7 @@
 <div id="tabs">
   <button class="tab active" id="tabAsm">🏗 Montaj</button>
   <button class="tab" id="tabDesign">✏️ Parça Tasarımı</button>
-  <span style="align-self:center;font-size:10px;color:var(--muted);padding:0 8px">v7.2</span>
+  <span style="align-self:center;font-size:10px;color:var(--muted);padding:0 8px">v7.4</span>
 </div>
 
 <div id="designPanel" style="display:none">
@@ -416,6 +416,8 @@ camera.position.set(160, 200, 380);
 const orbit = new OrbitControls(camera, renderer.domElement);
 orbit.enableDamping = true;
 orbit.target.set(60, 70, 0);
+// Fare tuşları: SOL = döndür, ORTA (teker basılı) = döndür, SAĞ = kaydır
+orbit.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN };
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0x1a2433, 1.0));
 const key = new THREE.DirectionalLight(0xffffff, 1.7);
@@ -859,6 +861,7 @@ const raycaster = new THREE.Raycaster();
 let pDown = null;
 canvas.addEventListener('pointerdown', e => { pDown = [e.clientX, e.clientY]; });
 canvas.addEventListener('pointerup', e => {
+  if (e.button !== 0) return;                 // sadece SOL tık seçer (orta/sağ = kamera)
   if (gizmo.dragging || gizmo.axis) return;
   if (!pDown || Math.hypot(e.clientX - pDown[0], e.clientY - pDown[1]) > 5) return;
   const ndc = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
@@ -1819,14 +1822,14 @@ addEventListener('keydown', e => {
   if (designMode) {  // çizim modunda kısayollar çizime çalışır
     if (e.key === 'Escape') { skPts = []; skSel = null; showDimBox(); skDraw(); }
     else if (e.key === 'Delete' && skSel) {
+      skSnapshot();
       skShapes.splice(skSel.si, 1);
       skSel = null; skHover = null; showDimBox(); skDraw();
-      skStatus('Şekil silindi.');
+      skStatus('Şekil silindi. (Ctrl+Z ile geri al)');
     }
     else if (e.ctrlKey && e.key.toLowerCase() === 'z') {
       e.preventDefault();
-      if (skPts.length) skPts.pop(); else skShapes.pop();
-      skSel = null; skHover = null; showDimBox(); skDraw();
+      skUndoDo();
     }
     return;
   }
@@ -1999,28 +2002,6 @@ const TEMPLATES = [
       s.obj.position.set(0, 90, 0); n.obj.position.set(0, 90, 70);
       doScrewMate(s, n); motor.partId = s.id;
   } },
-  { ad: '💉 İnsülin Pompası (gerçek ölçüler)', ac: 'GA12-N20 → Dişli 1:1 (m0.5·z30) → dif. vida (Ø8/P4,5 · Ø4/P0,5 → net 4 mm/dev) → somun → piston Ø14 → rezervuar Ø14 (3 cc / 300Ü). Senin projen!', kur: () => {
-      resetAssembly();
-      const g1 = addPart('gear', { m: 0.5, z: 30, b: 4, d0: 3, color: GEAR_COLORS[0] });
-      const g2 = addPart('gear', { m: 0.5, z: 30, b: 4, d0: 5, color: GEAR_COLORS[1] });
-      g1.obj.position.set(-18, 95, 0); g2.obj.position.set(6, 95, 0);
-      doGearMate(g1, g2);                                  // merkez mesafesi 15 mm
-      const dv = addPart('diffscrew', { d1: 8, P1: 4.5, L1: 22, d2: 4, P2: 0.5, L2: 22 });
-      dv.obj.position.copy(g2.obj.position);
-      doShaftMate(g2, dv);                                 // Dişli-2 vidaya kamalı
-      const nut = addPart('nut', { d: 4, P: 0.5, t: 6 });
-      nut.obj.position.copy(dv.obj.position).add(new THREE.Vector3(0, 0, 60));
-      doDiffMate(dv, nut);                                 // iç dişe (Ø4/P0,5) somun
-      const pis = addPart('piston', { d: 14, L: 28 });
-      pis.obj.position.copy(nut.obj.position).add(new THREE.Vector3(0, 0, 12));
-      doPushMate(nut, pis);
-      const hz = addPart('hazne', { D: 14, L: 32, e: 1.5 });
-      hz.obj.position.copy(pis.obj.position).add(new THREE.Vector3(0, 0, 24));
-      doCylMate(pis, hz);                                  // piston rezervuara
-      g1.name = 'Dişli 1 (motor)'; g2.name = 'Dişli 2 (vida)'; dv.name = 'Diferansiyel Vida';
-      nut.name = 'Piston Somunu'; pis.name = 'Piston'; hz.name = 'Rezervuar';
-      motor.partId = g1.id;
-  } },
 ];
 
 function loadTemplate(t) {
@@ -2051,6 +2032,15 @@ let pxmm = 3.5;                                   // piksel / mm
 let skShapes = [], skTool = null, skPts = [], skMouse = null;
 let skSel = null, skHover = null;   // seç/ölçü aracı: seçili ve üzerine gelinen kenar/daire
 let skCutMode = false, skPlane = 'front';   // kesme modu + çizim düzlemi
+let skUndoStack = [];                        // çizim geri-alma yığını
+function skSnapshot() { skUndoStack.push(JSON.stringify(skShapes)); if (skUndoStack.length > 80) skUndoStack.shift(); }
+function skUndoDo() {
+  if (skPts.length) { skPts = []; skDraw(); skStatus('Çizim adımı iptal edildi.'); return; }
+  if (!skUndoStack.length) { skStatus('Geri alınacak bir şey yok.'); return; }
+  skShapes = JSON.parse(skUndoStack.pop());
+  skSel = null; skHover = null; showDimBox(); skDraw();
+  skStatus('↩ Geri alındı.');
+}
 
 const skCX = () => (innerWidth + 330) / 2;        // panel solda: çizim alanını sağa ortala
 const skCY = () => innerHeight / 2;
@@ -2121,11 +2111,17 @@ function skDraw() {
   skx.strokeStyle = '#232d3a';
   for (let x = cx % maj; x < w; x += maj) skLine(x, 0, x, h);
   for (let y = cy % maj; y < h; y += maj) skLine(0, y, w, y);
-  // eksenler: yatay X, düşey turuncu = döndürme ekseni
-  skx.strokeStyle = '#2e4a68'; skx.lineWidth = 1.5; skLine(0, cy, w, cy);
-  skx.strokeStyle = '#f0883e'; skx.setLineDash([7, 6]); skLine(cx, 0, cx, h); skx.setLineDash([]);
-  skx.fillStyle = '#8b949e'; skx.font = '11px Segoe UI';
-  skx.fillText('döndürme ekseni', cx + 6, 16);
+  // eksenler + düzleme göre adlar
+  skx.strokeStyle = '#2e4a68'; skx.lineWidth = 1.5; skLine(0, cy, w, cy);                          // yatay eksen
+  skx.strokeStyle = '#f0883e'; skx.setLineDash([7, 6]); skLine(cx, 0, cx, h); skx.setLineDash([]);  // düşey = döndürme ekseni
+  const PLANE_AX = { front: ['X', 'Y', 'Z'], top: ['X', 'Z', 'Y'], right: ['Z', 'Y', 'X'] };
+  const PLANE_TR = { front: 'Ön', top: 'Üst', right: 'Sağ' };
+  const AX = PLANE_AX[skPlane] || PLANE_AX.front, PTR = PLANE_TR[skPlane] || 'Ön';
+  skx.font = 'bold 12px Segoe UI';
+  skx.fillStyle = '#5aa0e0'; skx.fillText(AX[0] + ' →', w - 44, cy - 8);
+  skx.fillStyle = '#f0883e'; skx.fillText('↑ ' + AX[1] + '  (döndürme ekseni)', cx + 8, 18);
+  skx.font = '11px Segoe UI'; skx.fillStyle = '#8b949e';
+  skx.fillText(`Düzlem: ${PTR}  ·  derinlik → ${AX[2]} ekseni`, 12, h - 14);
   // tamamlanmış şekiller
   for (const s of skShapes) {
     skPath(s);
@@ -2236,7 +2232,7 @@ function skClick(p) {
     if (skPts.length >= 3) {
       const [fx, fy] = toPx(skPts[0]), [mx, my] = toPx(p);
       if (Math.hypot(fx - mx, fy - my) < 10) {
-        skShapes.push({ kind: 'poly', pts: [...skPts], hole: skCutMode }); skPts = [];
+        skSnapshot(); skShapes.push({ kind: 'poly', pts: [...skPts], hole: skCutMode }); skPts = [];
         skStatus(skCutMode ? '✔ Kesme profili kapatıldı (turuncu).' : '✔ Profil kapatıldı — şimdi <b>Ekstrüzyon</b> veya <b>Döndür</b> de.'); skDraw(); return;
       }
     }
@@ -2245,8 +2241,10 @@ function skClick(p) {
     if (!skPts.length) skPts.push(p);
     else {
       const a = skPts[0];
-      if (Math.abs(p.x - a.x) >= 1 && Math.abs(p.y - a.y) >= 1)
+      if (Math.abs(p.x - a.x) >= 1 && Math.abs(p.y - a.y) >= 1) {
+        skSnapshot();
         skShapes.push({ kind: 'poly', pts: [{ x: a.x, y: a.y }, { x: p.x, y: a.y }, { x: p.x, y: p.y }, { x: a.x, y: p.y }], hole: skCutMode });
+      }
       skPts = [];
       skStatus(skCutMode ? '✔ Dikdörtgen kesme eklendi.' : '✔ Dikdörtgen eklendi.');
     }
@@ -2254,7 +2252,7 @@ function skClick(p) {
     if (!skPts.length) skPts.push(p);
     else {
       const c = skPts[0], r = Math.hypot(p.x - c.x, p.y - c.y);
-      if (r >= 1) skShapes.push({ kind: 'circle', cx: c.x, cy: c.y, r, hole: skCutMode });
+      if (r >= 1) { skSnapshot(); skShapes.push({ kind: 'circle', cx: c.x, cy: c.y, r, hole: skCutMode }); }
       skPts = [];
       skStatus(skCutMode ? '✔ Daire kesme eklendi (profil içine denk gelmeli).' : '✔ Daire eklendi.');
     }
@@ -2268,6 +2266,7 @@ function skClick(p) {
           const a = a0 + i / 6 * 2 * Math.PI;
           pts.push({ x: Math.round(c.x + R * Math.cos(a)), y: Math.round(c.y + R * Math.sin(a)) });
         }
+        skSnapshot();
         skShapes.push({ kind: 'poly', pts, hole: skCutMode });
       }
       skPts = [];
@@ -2336,7 +2335,7 @@ function showDimBox() {
   const addField = (label, val, cb) => {
     const row = document.createElement('div'); row.className = 'row';
     row.innerHTML = `<label>${label}</label><input type="number" step="0.5" value="${Math.round(val * 100) / 100}"><span class="unit">mm</span>`;
-    row.querySelector('input').addEventListener('change', e => { cb(+e.target.value); skDraw(); showDimBox(); });
+    row.querySelector('input').addEventListener('change', e => { skSnapshot(); cb(+e.target.value); skDraw(); showDimBox(); });
     f.appendChild(row);
   };
   if (s.kind === 'circle') {
@@ -2392,7 +2391,7 @@ sk.addEventListener('contextmenu', e => {
   del.onmouseleave = () => del.style.background = 'transparent';
   del.onclick = () => {
     if (skMenuTarget != null && skShapes[skMenuTarget]) {
-      skShapes.splice(skMenuTarget, 1);
+      skSnapshot(); skShapes.splice(skMenuTarget, 1);
       skSel = null; skHover = null; showDimBox(); skDraw();
       skStatus('🗑 Şekil silindi. (Ctrl+Z ile geri alınmaz — tekrar çiz)');
     }
@@ -2422,7 +2421,7 @@ for (const [id, tool, tip] of [
   };
 }
 $('tUndo').onclick = () => { if (skPts.length) skPts.pop(); else skShapes.pop(); skSel = null; skHover = null; showDimBox(); skDraw(); };
-$('tClear').onclick = () => { skShapes = []; skPts = []; skSel = null; skHover = null; skCutMode = false; setCutUI(); showDimBox(); skDraw(); skStatus('Çizim temizlendi.'); };
+$('tClear').onclick = () => { if (skShapes.length) skSnapshot(); skShapes = []; skPts = []; skSel = null; skHover = null; skCutMode = false; setCutUI(); showDimBox(); skDraw(); skStatus('Çizim temizlendi. (Ctrl+Z ile geri al)'); };
 
 // Düzlem seçimi (Ön / Üst / Sağ)
 function setPlaneUI() {
@@ -2430,7 +2429,8 @@ function setPlaneUI() {
   $(skPlane === 'top' ? 'plTop' : skPlane === 'right' ? 'plRight' : 'plFront').classList.add('active');
 }
 for (const [id, pl] of [['plFront', 'front'], ['plTop', 'top'], ['plRight', 'right']]) {
-  $(id).onclick = () => { skPlane = pl; setPlaneUI(); };
+  $(id).onclick = () => { skPlane = pl; setPlaneUI(); skDraw();
+    skStatus(`Düzlem: ${{front:'Ön',top:'Üst',right:'Sağ'}[pl]} — çizdiğin katı bu düzleme göre yönlenir.`); };
 }
 // Kesme modu (katıdan çıkar)
 function setCutUI() {
@@ -2479,6 +2479,7 @@ $('btnEditSketch').onclick = () => {
   if (!p || p.type !== 'custom') return;
   editingId = p.id;
   skShapes = JSON.parse(JSON.stringify(p.params.shapes || []));
+  skUndoStack = [];
   skPts = []; skSel = null; skHover = null;
   skPlane = p.params.plane || 'front'; setPlaneUI();
   skCutMode = false; setCutUI();
