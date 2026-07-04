@@ -1999,7 +1999,28 @@ const TEMPLATES = [
       s.obj.position.set(0, 90, 0); n.obj.position.set(0, 90, 70);
       doScrewMate(s, n); motor.partId = s.id;
   } },
-  { ad: '💉 İnsülin Pompası', ac: 'Pinyon+çark → diferansiyel vida → somun → piston → hazne. Senin projen!', kur: () => { applyState(PUMP_STATE); } },
+  { ad: '💉 İnsülin Pompası (gerçek ölçüler)', ac: 'GA12-N20 → Dişli 1:1 (m0.5·z30) → dif. vida (Ø8/P4,5 · Ø4/P0,5 → net 4 mm/dev) → somun → piston Ø14 → rezervuar Ø14 (3 cc / 300Ü). Senin projen!', kur: () => {
+      resetAssembly();
+      const g1 = addPart('gear', { m: 0.5, z: 30, b: 4, d0: 3, color: GEAR_COLORS[0] });
+      const g2 = addPart('gear', { m: 0.5, z: 30, b: 4, d0: 5, color: GEAR_COLORS[1] });
+      g1.obj.position.set(-18, 95, 0); g2.obj.position.set(6, 95, 0);
+      doGearMate(g1, g2);                                  // merkez mesafesi 15 mm
+      const dv = addPart('diffscrew', { d1: 8, P1: 4.5, L1: 22, d2: 4, P2: 0.5, L2: 22 });
+      dv.obj.position.copy(g2.obj.position);
+      doShaftMate(g2, dv);                                 // Dişli-2 vidaya kamalı
+      const nut = addPart('nut', { d: 4, P: 0.5, t: 6 });
+      nut.obj.position.copy(dv.obj.position).add(new THREE.Vector3(0, 0, 60));
+      doDiffMate(dv, nut);                                 // iç dişe (Ø4/P0,5) somun
+      const pis = addPart('piston', { d: 14, L: 28 });
+      pis.obj.position.copy(nut.obj.position).add(new THREE.Vector3(0, 0, 12));
+      doPushMate(nut, pis);
+      const hz = addPart('hazne', { D: 14, L: 32, e: 1.5 });
+      hz.obj.position.copy(pis.obj.position).add(new THREE.Vector3(0, 0, 24));
+      doCylMate(pis, hz);                                  // piston rezervuara
+      g1.name = 'Dişli 1 (motor)'; g2.name = 'Dişli 2 (vida)'; dv.name = 'Diferansiyel Vida';
+      nut.name = 'Piston Somunu'; pis.name = 'Piston'; hz.name = 'Rezervuar';
+      motor.partId = g1.id;
+  } },
 ];
 
 function loadTemplate(t) {
