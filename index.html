@@ -59,6 +59,8 @@
 
   #sk2d{position:fixed;inset:0;display:none;z-index:5;cursor:crosshair;}
   .toolbtn.active{background:#0b2a4a;border-color:var(--accent);color:var(--accent);}
+  .planebtn.active{background:#0b2a4a;border-color:var(--accent);color:var(--accent);}
+  .cutbtn.active{background:#3d2300;border-color:var(--warn);color:var(--warn);}
 
   #subbar{display:flex;gap:4px;margin:2px 0 10px;background:#0d1117;border:1px solid var(--border);border-radius:9px;padding:3px;}
   #subbar .subtab{flex:1;border:none;background:transparent;color:var(--muted);padding:7px 3px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;}
@@ -167,12 +169,20 @@
 <div id="tabs">
   <button class="tab active" id="tabAsm">🏗 Montaj</button>
   <button class="tab" id="tabDesign">✏️ Parça Tasarımı</button>
-  <span style="align-self:center;font-size:10px;color:var(--muted);padding:0 8px">v7.0</span>
+  <span style="align-self:center;font-size:10px;color:var(--muted);padding:0 8px">v7.2</span>
 </div>
 
 <div id="designPanel" style="display:none">
   <h1>Parça <span>Tasarımı</span></h1>
-  <div class="sub">Profil çiz → katıya çevir → montaja ekle</div>
+  <div class="sub">Düzlem seç → profil çiz → katıya çevir → montaja ekle</div>
+
+  <h2>Düzlem</h2>
+  <div class="btnrow">
+    <button class="planebtn active" id="plFront" title="Öne bakan parçalar: dişli, plaka">▦ Ön</button>
+    <button class="planebtn" id="plTop" title="Yatay parçalar: üstten bakış">▦ Üst</button>
+    <button class="planebtn" id="plRight" title="Dikey parçalar: yandan bakış">▦ Sağ</button>
+  </div>
+  <div class="sub" style="margin-top:4px">Oluşturduğun katı bu düzleme göre yönlenir.</div>
 
   <h2>Çizim</h2>
   <div class="btnrow" style="margin-bottom:6px">
@@ -185,7 +195,9 @@
   <div class="btnrow" style="margin-top:6px">
     <button class="toolbtn" id="tCircle">○ Daire</button>
     <button class="toolbtn" id="tHex">⬡ Altıgen</button>
-    <button class="toolbtn" id="tHole">◎ Delik</button>
+  </div>
+  <div class="btnrow" style="margin-top:8px">
+    <button id="tCut" class="cutbtn" title="Açıkken çizdiğin şekiller katıdan çıkarılır (delik/kesme/yuva)">✂️ Kesme Modu: KAPALI</button>
   </div>
   <div class="btnrow" style="margin-top:6px">
     <button id="tUndo">↩ Geri</button>
@@ -226,6 +238,24 @@
   <h2>Montaj Ağacı</h2>
   <div id="tree"></div>
 
+  <div id="selBox" style="display:none">
+    <h2>⚙ Seçili: <span id="selName" style="color:var(--text)"></span></h2>
+    <div id="params"></div>
+    <div class="btnrow" style="margin-top:4px">
+      <button id="btnMotor" title="Bu parçayı tahrik eden motoru bağla/kaldır">⚡ Motor</button>
+      <button id="btnDup" title="Ölçüleriyle klonla (Ctrl+D)">⧉ Çoğalt</button>
+      <button id="btnDel" class="danger">🗑 Sil</button>
+    </div>
+    <div class="btnrow" style="margin-top:6px;display:none" id="editSketchRow">
+      <button id="btnEditSketch">✏️ Çizimi Düzenle</button>
+    </div>
+    <div class="btnrow" style="margin-top:6px">
+      <button id="modeT" class="active">✥ Taşı (G)</button>
+      <button id="modeR">⟳ Döndür (R)</button>
+      <button id="btnPattern" title="Doğrusal/dairesel dizi">▦ Dizi</button>
+    </div>
+  </div>
+
   <div class="subpage active" id="subParts">
   <div class="btnrow" style="margin-bottom:8px">
     <button id="btnTemplates" style="background:#0b2a4a;border-color:var(--accent);color:var(--accent);font-weight:700">📚 Hazır Şablon Aç</button>
@@ -245,24 +275,6 @@
   <div class="btnrow" style="margin-top:6px">
     <button id="addPiston" title="Somun/kramayer tarafından itilen piston">⚪ Piston</button>
     <button id="addHazne" title="Şeffaf silindir hazne — sıvı seviyesi görünür">💉 Hazne</button>
-  </div>
-
-  <div id="selBox" style="display:none">
-    <h2>Seçili: <span id="selName" style="color:var(--text)"></span></h2>
-    <div id="params"></div>
-    <div class="btnrow" style="margin-top:4px">
-      <button id="btnMotor">⚡ Motor</button>
-      <button id="btnDup" title="Ölçüleriyle klonla (Ctrl+D)">⧉ Çoğalt</button>
-      <button id="btnDel" class="danger">🗑 Sil</button>
-    </div>
-    <div class="btnrow" style="margin-top:6px;display:none" id="editSketchRow">
-      <button id="btnEditSketch">✏️ Çizimi Düzenle</button>
-    </div>
-    <div class="btnrow" style="margin-top:6px">
-      <button id="modeT" class="active">✥ Taşı (G)</button>
-      <button id="modeR">⟳ Döndür (R)</button>
-      <button id="btnPattern" title="Doğrusal/dairesel dizi">▦ Dizi</button>
-    </div>
   </div>
   </div><!-- /subParts -->
 
@@ -641,6 +653,10 @@ function pointInPoly(pts, x, y) {
   }
   return inside;
 }
+function polyCentroid(pts) {
+  let x = 0, y = 0; for (const q of pts) { x += q.x; y += q.y; }
+  return { x: x / pts.length, y: y / pts.length };
+}
 
 function buildCustom(p) {
   const g = new THREE.Group();
@@ -671,17 +687,22 @@ function buildCustom(p) {
     }
     for (const s of p.shapes) {
       if (!s.hole) continue;
+      const cen = s.kind === 'circle' ? { x: s.cx, y: s.cy } : polyCentroid(s.pts);
       const idx = srcs.findIndex(o =>
-        o.kind === 'circle' ? Math.hypot(s.cx - o.cx, s.cy - o.cy) < o.r : pointInPoly(o.pts, s.cx, s.cy));
-      if (idx >= 0) {
+        o.kind === 'circle' ? Math.hypot(cen.x - o.cx, cen.y - o.cy) < o.r : pointInPoly(o.pts, cen.x, cen.y));
+      if (idx >= 0) {                       // her şekil (daire/dikdörtgen/çokgen) kesme olabilir
         const h = new THREE.Path();
-        h.absarc(s.cx, s.cy, s.r, 0, Math.PI * 2, true);
+        if (s.kind === 'circle') h.absarc(s.cx, s.cy, s.r, 0, Math.PI * 2, true);
+        else { s.pts.forEach((q, i) => i ? h.lineTo(q.x, q.y) : h.moveTo(q.x, q.y)); h.closePath(); }
         shapes[idx].holes.push(h);
       }
     }
     geo = new THREE.ExtrudeGeometry(shapes, { depth: p.depth || 10, bevelEnabled: false, curveSegments: 24 });
     geo.translate(0, 0, -(p.depth || 10) / 2);
   }
+  // düzlem yönlendirmesi: front=XY (varsayılan) · top=XZ · right=YZ
+  if (p.plane === 'top') geo.rotateX(-Math.PI / 2);
+  else if (p.plane === 'right') geo.rotateY(Math.PI / 2);
   geo.computeBoundingSphere();
   geo.computeBoundingBox();
   g.add(new THREE.Mesh(geo, mat));
@@ -2008,6 +2029,7 @@ let designMode = false, guideWasVisible = false;
 let pxmm = 3.5;                                   // piksel / mm
 let skShapes = [], skTool = null, skPts = [], skMouse = null;
 let skSel = null, skHover = null;   // seç/ölçü aracı: seçili ve üzerine gelinen kenar/daire
+let skCutMode = false, skPlane = 'front';   // kesme modu + çizim düzlemi
 
 const skCX = () => (innerWidth + 330) / 2;        // panel solda: çizim alanını sağa ortala
 const skCY = () => innerHeight / 2;
@@ -2120,15 +2142,16 @@ function skDraw() {
     hl(skHover, 'rgba(230,237,243,.45)');
     hl(skSel, '#3fb950');
   }
-  // devam eden çizim
-  skx.strokeStyle = '#3fb950'; skx.lineWidth = 2;
+  // devam eden çizim (kesme modunda turuncu, eklemede yeşil)
+  const drawCol = skCutMode ? '#f0883e' : '#3fb950';
+  skx.strokeStyle = drawCol; skx.lineWidth = 2;
   if (skTool === 'line' && skPts.length) {
     skx.beginPath();
     skPts.forEach((q, i) => { const [x, y] = toPx(q); i ? skx.lineTo(x, y) : skx.moveTo(x, y); });
     if (skMouse) skx.lineTo(...toPx(skMouse));
     skx.stroke();
     const [fx, fy] = toPx(skPts[0]);
-    skx.beginPath(); skx.arc(fx, fy, 6, 0, Math.PI * 2); skx.strokeStyle = '#3fb950'; skx.stroke();
+    skx.beginPath(); skx.arc(fx, fy, 6, 0, Math.PI * 2); skx.strokeStyle = drawCol; skx.stroke();
     if (skMouse) {
       const a = skPts[skPts.length - 1];
       skLabel(fmt(Math.hypot(skMouse.x - a.x, skMouse.y - a.y), 0) + ' mm', ...toPx(skMouse));
@@ -2139,10 +2162,10 @@ function skDraw() {
     skx.strokeRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
     skLabel(`${fmt(Math.abs(skMouse.x - a.x), 0)} × ${fmt(Math.abs(skMouse.y - a.y), 0)} mm`, ...toPx(skMouse));
   }
-  if ((skTool === 'circle' || skTool === 'hole' || skTool === 'hex') && skPts.length && skMouse) {
+  if ((skTool === 'circle' || skTool === 'hex') && skPts.length && skMouse) {
     const c = skPts[0], r = Math.hypot(skMouse.x - c.x, skMouse.y - c.y);
     skx.beginPath(); skx.arc(...toPx(c), Math.max(r * pxmm, 2), 0, Math.PI * 2);
-    skx.strokeStyle = skTool === 'hole' ? '#f0883e' : '#3fb950'; skx.stroke();
+    skx.strokeStyle = drawCol; skx.stroke();
     skLine(...toPx(c), ...toPx(skMouse));
     skLabel('R ' + fmt(r, 1) + ' mm', ...toPx(skMouse));
   }
@@ -2168,8 +2191,8 @@ function skDraw() {
     skx.fillText(skSnap.t, sx + 13, sy - 11);
   }
   // aktif araç rozeti (üst orta)
-  const TOOL_TITLES = { sel: '✥ Seç / Ölçü', line: '╱ Çizgi', rect: '▭ Dikdörtgen', circle: '○ Daire', hex: '⬡ Altıgen', hole: '◎ Delik' };
-  const chip = skTool ? TOOL_TITLES[skTool] : 'Araç seç';
+  const TOOL_TITLES = { sel: '✥ Seç / Ölçü', line: '╱ Çizgi', rect: '▭ Dikdörtgen', circle: '○ Daire', hex: '⬡ Altıgen' };
+  const chip = (skTool ? TOOL_TITLES[skTool] : 'Araç seç') + (skCutMode ? ' ✂️KES' : '');
   skx.font = 'bold 13px Segoe UI';
   const tw = skx.measureText(chip).width + 26;
   skx.fillStyle = 'rgba(22,27,34,.9)';
@@ -2192,8 +2215,8 @@ function skClick(p) {
     if (skPts.length >= 3) {
       const [fx, fy] = toPx(skPts[0]), [mx, my] = toPx(p);
       if (Math.hypot(fx - mx, fy - my) < 10) {
-        skShapes.push({ kind: 'poly', pts: [...skPts] }); skPts = [];
-        skStatus('✔ Profil kapatıldı — şimdi <b>Ekstrüzyon</b> veya <b>Döndür</b> de.'); skDraw(); return;
+        skShapes.push({ kind: 'poly', pts: [...skPts], hole: skCutMode }); skPts = [];
+        skStatus(skCutMode ? '✔ Kesme profili kapatıldı (turuncu).' : '✔ Profil kapatıldı — şimdi <b>Ekstrüzyon</b> veya <b>Döndür</b> de.'); skDraw(); return;
       }
     }
     skPts.push(p);
@@ -2202,17 +2225,17 @@ function skClick(p) {
     else {
       const a = skPts[0];
       if (Math.abs(p.x - a.x) >= 1 && Math.abs(p.y - a.y) >= 1)
-        skShapes.push({ kind: 'poly', pts: [{ x: a.x, y: a.y }, { x: p.x, y: a.y }, { x: p.x, y: p.y }, { x: a.x, y: p.y }] });
+        skShapes.push({ kind: 'poly', pts: [{ x: a.x, y: a.y }, { x: p.x, y: a.y }, { x: p.x, y: p.y }, { x: a.x, y: p.y }], hole: skCutMode });
       skPts = [];
-      skStatus('✔ Dikdörtgen eklendi.');
+      skStatus(skCutMode ? '✔ Dikdörtgen kesme eklendi.' : '✔ Dikdörtgen eklendi.');
     }
-  } else if (skTool === 'circle' || skTool === 'hole') {
+  } else if (skTool === 'circle') {
     if (!skPts.length) skPts.push(p);
     else {
       const c = skPts[0], r = Math.hypot(p.x - c.x, p.y - c.y);
-      if (r >= 1) skShapes.push({ kind: 'circle', cx: c.x, cy: c.y, r, hole: skTool === 'hole' });
+      if (r >= 1) skShapes.push({ kind: 'circle', cx: c.x, cy: c.y, r, hole: skCutMode });
       skPts = [];
-      skStatus(skTool === 'hole' ? '✔ Delik eklendi (profil içine denk gelmeli).' : '✔ Daire eklendi.');
+      skStatus(skCutMode ? '✔ Daire kesme eklendi (profil içine denk gelmeli).' : '✔ Daire eklendi.');
     }
   } else if (skTool === 'hex') {
     if (!skPts.length) skPts.push(p);
@@ -2224,10 +2247,10 @@ function skClick(p) {
           const a = a0 + i / 6 * 2 * Math.PI;
           pts.push({ x: Math.round(c.x + R * Math.cos(a)), y: Math.round(c.y + R * Math.sin(a)) });
         }
-        skShapes.push({ kind: 'poly', pts });
+        skShapes.push({ kind: 'poly', pts, hole: skCutMode });
       }
       skPts = [];
-      skStatus('✔ Altıgen eklendi.');
+      skStatus(skCutMode ? '✔ Altıgen kesme eklendi.' : '✔ Altıgen eklendi.');
     }
   }
   skDraw();
@@ -2369,7 +2392,6 @@ for (const [id, tool, tip] of [
   ['tRect', 'rect', 'İki köşeye tıkla.'],
   ['tCircle', 'circle', 'Merkeze, sonra yarıçapa tıkla.'],
   ['tHex', 'hex', 'Merkeze, sonra köşeye tıkla.'],
-  ['tHole', 'hole', 'Profilin İÇİNE delik: merkez + yarıçap.'],
 ]) {
   $(id).onclick = () => {
     skTool = tool; skPts = []; skSel = null; skHover = null; showDimBox();
@@ -2379,7 +2401,28 @@ for (const [id, tool, tip] of [
   };
 }
 $('tUndo').onclick = () => { if (skPts.length) skPts.pop(); else skShapes.pop(); skSel = null; skHover = null; showDimBox(); skDraw(); };
-$('tClear').onclick = () => { skShapes = []; skPts = []; skSel = null; skHover = null; showDimBox(); skDraw(); skStatus('Çizim temizlendi.'); };
+$('tClear').onclick = () => { skShapes = []; skPts = []; skSel = null; skHover = null; skCutMode = false; setCutUI(); showDimBox(); skDraw(); skStatus('Çizim temizlendi.'); };
+
+// Düzlem seçimi (Ön / Üst / Sağ)
+function setPlaneUI() {
+  document.querySelectorAll('.planebtn').forEach(b => b.classList.remove('active'));
+  $(skPlane === 'top' ? 'plTop' : skPlane === 'right' ? 'plRight' : 'plFront').classList.add('active');
+}
+for (const [id, pl] of [['plFront', 'front'], ['plTop', 'top'], ['plRight', 'right']]) {
+  $(id).onclick = () => { skPlane = pl; setPlaneUI(); };
+}
+// Kesme modu (katıdan çıkar)
+function setCutUI() {
+  $('tCut').classList.toggle('active', skCutMode);
+  $('tCut').textContent = skCutMode ? '✂️ Kesme Modu: AÇIK' : '✂️ Kesme Modu: KAPALI';
+}
+$('tCut').onclick = () => {
+  skCutMode = !skCutMode; setCutUI();
+  skStatus(skCutMode
+    ? '✂️ Kesme modu AÇIK — çizdiğin şekiller katıdan çıkarılır (turuncu). Kesme profilini katı profilin İÇİNE çiz.'
+    : 'Ekleme modu — çizdiğin şekiller katı olur (mavi).');
+  skDraw();
+};
 
 let editingId = null;   // "Çizimi Düzenle" ile açılan parçanın id'si
 
@@ -2392,6 +2435,7 @@ function addCustomPart(op) {
     const p = byId(editingId);
     p.params.op = op;
     p.params.depth = depth;
+    p.params.plane = skPlane;
     p.params.shapes = JSON.parse(JSON.stringify(skShapes));
     if (nm) p.name = nm;
     rebuildContent(p);
@@ -2402,7 +2446,7 @@ function addCustomPart(op) {
     statusMsg(`✔ <b>${p.name}</b> çizimden güncellendi — bağlantıları korundu.`, 'ok');
     return;
   }
-  const p = addPart('custom', { op, depth, shapes: JSON.parse(JSON.stringify(skShapes)), color: 0x9fb4c8 });
+  const p = addPart('custom', { op, depth, plane: skPlane, shapes: JSON.parse(JSON.stringify(skShapes)), color: 0x9fb4c8 });
   if (nm) p.name = nm;
   setTab('asm');
   sel = [p.id]; refreshSel(); refreshAll(); save(); fitView();
@@ -2415,6 +2459,8 @@ $('btnEditSketch').onclick = () => {
   editingId = p.id;
   skShapes = JSON.parse(JSON.stringify(p.params.shapes || []));
   skPts = []; skSel = null; skHover = null;
+  skPlane = p.params.plane || 'front'; setPlaneUI();
+  skCutMode = false; setCutUI();
   $('dDepth').value = p.params.depth || 10;
   $('dName').value = p.name;
   setTab('design');

@@ -1,5 +1,5 @@
-/* MekSim service worker — çevrimdışı çalışması için önbellek */
-const CACHE = 'meksim-v7';
+/* MekSim service worker — çevrimdışı destek + güncellemeleri kaçırmama */
+const CACHE = 'meksim-v8';
 const ASSETS = [
   './',
   './index.html',
@@ -22,14 +22,29 @@ self.addEventListener('activate', e => {
   );
 });
 
-// Önbellek öncelikli; yoksa ağdan çek ve önbelleğe ekle
 self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
-  e.respondWith(
-    caches.match(e.request).then(hit => hit || fetch(e.request).then(res => {
-      const copy = res.clone();
-      caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
-      return res;
-    }).catch(() => caches.match('./index.html')))
-  );
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const isHTML = req.mode === 'navigate' ||
+    (req.headers.get('accept') || '').includes('text/html');
+
+  if (isHTML) {
+    // HTML: ÖNCE AĞ (her zaman en güncel sürüm), çevrimdışıysa önbellek
+    e.respondWith(
+      fetch(req).then(res => {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+        return res;
+      }).catch(() => caches.match(req).then(hit => hit || caches.match('./index.html')))
+    );
+  } else {
+    // Statik varlıklar: önce önbellek (hızlı), yoksa ağdan çek ve sakla
+    e.respondWith(
+      caches.match(req).then(hit => hit || fetch(req).then(res => {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+        return res;
+      }))
+    );
+  }
 });
