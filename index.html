@@ -169,7 +169,7 @@
 <div id="tabs">
   <button class="tab active" id="tabAsm">🏗 Montaj</button>
   <button class="tab" id="tabDesign">✏️ Parça Tasarımı</button>
-  <span style="align-self:center;font-size:10px;color:var(--muted);padding:0 8px">v7.5</span>
+  <span style="align-self:center;font-size:10px;color:var(--muted);padding:0 8px">v7.6</span>
 </div>
 
 <div id="designPanel" style="display:none">
@@ -341,11 +341,20 @@
     </table>
   </div>
 
-  <h2>Dosya & Kayıt</h2>
+  <h2>🎯 Doz Hassasiyeti</h2>
+  <div class="row"><label>Encoder sayım/devir</label><input type="number" id="dEnc" value="16384" step="1"></div>
+  <div class="row"><label>Motor redüktör oranı</label><input type="number" id="dGbox" value="1000" step="1"><span class="unit">:1</span></div>
+  <div class="row"><label>1 Ünite =</label><input type="number" id="dUnit" value="10" step="1"><span class="unit">µL</span></div>
+  <table class="res" id="doseOut"></table>
+
+  <h2>Dosya & Kayıt · CAD</h2>
   <div class="btnrow">
     <button id="btnSave" title="Montajı .json dosyası olarak indir">💾 Kaydet</button>
     <button id="btnOpen" title="Kaydedilmiş .json montajını aç">📂 Aç</button>
     <button id="btnRec" title="Simülasyonu video (.webm) olarak kaydet">🎥 Video</button>
+  </div>
+  <div class="btnrow" style="margin-top:6px">
+    <button id="btnSTL" title="Seçili parçayı veya tüm montajı STL olarak indir (CAD/3B baskı)">📐 CAD'e Aktar (STL)</button>
   </div>
   <input type="file" id="fileOpen" accept=".json" style="display:none">
 
@@ -1380,6 +1389,84 @@ function refreshSpeeds() {
     const S = byId(l.a), w = omega.get(l.a);
     if (S && w) t.innerHTML += `<tr><td>🌀 ${S.name} (eksenel)</td><td>${fmt(w / (2 * Math.PI) * S.params.P1, 2)} mm/s</td></tr>`;
   }
+  computeDose();
+}
+
+// Doz hassasiyeti: pompa zincirinden (vida net ilerleme + rezervuar kesiti + encoder) çözünürlük hesabı
+function computeDose() {
+  const out = $('doseOut'); if (!out) return;
+  const cyl = links.find(l => l.type === 'cyl');
+  const diff = links.find(l => l.type === 'diff');
+  const scr = links.find(l => l.type === 'screw');
+  const haz = cyl ? byId(cyl.b) : null;
+  let screwPart = null, net = 0;
+  if (diff) { screwPart = byId(diff.a); net = screwPart.params.P1 - screwPart.params.P2; }
+  else if (scr) { screwPart = byId(scr.a); net = screwPart.params.P; }
+  if (!haz || !screwPart || !(net > 0)) {
+    out.innerHTML = '<tr><td class="empty">Vida + somun + piston + hazne kur → doz çözünürlüğü otomatik hesaplanır.</td></tr>';
+    return;
+  }
+  const A = Math.PI * (haz.params.D / 2) ** 2;           // mm² = µL/mm
+  const enc = Math.max(+$('dEnc').value || 1, 1);
+  const uL = Math.max(+$('dUnit').value || 10, 1e-4);    // µL / Ünite
+  const gbox = Math.max(+$('dGbox').value || 1, 1);
+  const volPerRev = A * net;                              // µL / vida devri
+  const mmPerCount = net / enc, volPerCount = A * mmPerCount;
+  const screwRevPerUnit = uL / volPerRev;
+  // motor→vida dişli oranı (varsa) — solveSpeeds oransal
+  let gearRatio = 1;
+  if (motor.partId != null) {
+    const { omega } = solveSpeeds();
+    const wm = omega.get(motor.partId), ws = omega.get(screwPart.id);
+    if (wm && ws) gearRatio = Math.abs(wm / ws);          // motor-çıkış devri / vida devri
+  }
+  const motorRevPerUnit = screwRevPerUnit * gearRatio * gbox;
+  const F = (x, d) => fmt(x, d);
+  out.innerHTML =
+    `<tr><td>Rezervuar kesiti</td><td>${F(A, 1)} mm²</td></tr>` +
+    `<tr><td>Net ilerleme</td><td>${F(net, 2)} mm/dev</td></tr>` +
+    `<tr><td>1 vida devri</td><td>${F(volPerRev, 1)} µL = ${F(volPerRev / uL, 2)} Ü</td></tr>` +
+    `<tr><td>1 encoder adımı</td><td>${F(mmPerCount * 1000, 3)} µm = ${F(volPerCount, 4)} µL</td></tr>` +
+    `<tr><td><b>En küçük doz</b></td><td><b>${F(volPerCount / uL, 4)} Ü</b></td></tr>` +
+    `<tr><td>1 Ünite için</td><td>${F(uL / volPerCount, 0)} adım · ${F(motorRevPerUnit, 1)} motor devri</td></tr>`;
+}
+
+/* ================= STL dışa aktarım (CAD / 3B baskı, mm) ================= */
+function exportSTL(partList, filename) {
+  const tris = [];
+  const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vC = new THREE.Vector3();
+  for (const p of partList) {
+    p.obj.updateMatrixWorld(true);
+    p.obj.traverse(o => {
+      if (!o.isMesh || o.userData.isPitch || o.userData.isFluid) return;
+      const g = o.geometry, pos = g.attributes.position, idx = g.index, m = o.matrixWorld;
+      const count = idx ? idx.count : pos.count;
+      for (let i = 0; i < count; i += 3) {
+        const a = idx ? idx.getX(i) : i, b = idx ? idx.getX(i + 1) : i + 1, c = idx ? idx.getX(i + 2) : i + 2;
+        vA.fromBufferAttribute(pos, a).applyMatrix4(m);
+        vB.fromBufferAttribute(pos, b).applyMatrix4(m);
+        vC.fromBufferAttribute(pos, c).applyMatrix4(m);
+        tris.push([vA.x, vA.y, vA.z, vB.x, vB.y, vB.z, vC.x, vC.y, vC.z]);
+      }
+    });
+  }
+  if (!tris.length) { statusMsg('⚠ Aktarılacak katı geometri yok.', 'warn'); return; }
+  const buf = new ArrayBuffer(84 + tris.length * 50), dv = new DataView(buf);
+  dv.setUint32(80, tris.length, true);
+  let off = 84;
+  const ab = new THREE.Vector3(), ac = new THREE.Vector3(), nn = new THREE.Vector3();
+  for (const t of tris) {
+    ab.set(t[3] - t[0], t[4] - t[1], t[5] - t[2]);
+    ac.set(t[6] - t[0], t[7] - t[1], t[8] - t[2]);
+    nn.crossVectors(ab, ac).normalize();
+    dv.setFloat32(off, nn.x, true); dv.setFloat32(off + 4, nn.y, true); dv.setFloat32(off + 8, nn.z, true); off += 12;
+    for (let k = 0; k < 9; k++) { dv.setFloat32(off, t[k], true); off += 4; }
+    dv.setUint16(off, 0, true); off += 2;
+  }
+  const aEl = document.createElement('a');
+  aEl.href = URL.createObjectURL(new Blob([buf], { type: 'application/octet-stream' }));
+  aEl.download = filename; aEl.click();
+  setTimeout(() => URL.revokeObjectURL(aEl.href), 3000);
 }
 
 /* ================= Simülasyon döngüsü ================= */
@@ -1753,6 +1840,19 @@ $('btnSave').onclick = () => {
   setTimeout(() => URL.revokeObjectURL(a.href), 3000);
   statusMsg('💾 Montaj dosyaya kaydedildi (meksim-montaj.json).', 'ok');
 };
+// Doz hassasiyeti girdileri → anında yeniden hesapla
+for (const id of ['dEnc', 'dGbox', 'dUnit']) $(id).addEventListener('input', computeDose);
+
+// STL dışa aktarım: tek parça seçiliyse onu, değilse tüm montajı
+$('btnSTL').onclick = () => {
+  if (!parts.length) return statusMsg('⚠ Aktarılacak parça yok.', 'warn');
+  const one = sel.length === 1 && byId(sel[0]);
+  const list = one ? [one] : parts;
+  const name = (one ? one.name.replace(/[^\wğüşıöçĞÜŞİÖÇ]+/g, '_') : 'meksim-montaj') + '.stl';
+  exportSTL(list, name);
+  statusMsg(`✔ ${list.length} parça STL olarak indirildi (${name}). CAD'e mm cinsinden aktarabilirsin.`, 'ok');
+};
+
 $('btnOpen').onclick = () => $('fileOpen').click();
 $('fileOpen').addEventListener('change', e => {
   const f = e.target.files[0]; if (!f) return;
