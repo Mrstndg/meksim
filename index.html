@@ -169,7 +169,7 @@
 <div id="tabs">
   <button class="tab active" id="tabAsm">🏗 Montaj</button>
   <button class="tab" id="tabDesign">✏️ Parça Tasarımı</button>
-  <span style="align-self:center;font-size:10px;color:var(--muted);padding:0 8px">v7.6</span>
+  <span style="align-self:center;font-size:10px;color:var(--muted);padding:0 8px">v7.7</span>
 </div>
 
 <div id="designPanel" style="display:none">
@@ -278,6 +278,11 @@
   <div class="btnrow" style="margin-top:6px">
     <button id="addPiston" title="Somun/kramayer tarafından itilen piston">⚪ Piston</button>
     <button id="addHazne" title="Şeffaf silindir hazne — sıvı seviyesi görünür">💉 Hazne</button>
+  </div>
+  <div class="btnrow" style="margin-top:6px">
+    <button id="addMil" title="Silindirik mil — üzerine dişli/kasnak takılır, döner">┃ Mil</button>
+    <button id="addKasnak" title="V-kanallı kasnak (kayış-kasnak)">⊙ Kasnak</button>
+    <button id="addRulman" title="Rulman/yatak — mili destekler">◎ Rulman</button>
   </div>
   </div><!-- /subParts -->
 
@@ -727,6 +732,47 @@ function buildCustom(p) {
   };
 }
 
+// Mil (shaft): +Z boyunca silindir
+function buildMil(p) {
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(p.d / 2, p.d / 2, p.L, 36),
+    new THREE.MeshStandardMaterial({ color: 0x9aa7b5, metalness: 0.85, roughness: 0.3 }));
+  m.rotation.x = Math.PI / 2; m.position.z = p.L / 2; g.add(m);
+  return { content: g, r: p.d / 2 };
+}
+
+// Kasnak (pulley): V-kanallı çark (LatheGeometry), merkezinde delik
+function buildKasnak(p) {
+  const R = p.D / 2, rG = R * 0.72, b = p.b, ri = Math.max(p.d0 / 2, 0.5);
+  const prof = [[ri, 0], [R, 0], [R, b * 0.22], [rG, b * 0.5], [R, b * 0.78], [R, b], [ri, b]]
+    .map(q => new THREE.Vector2(q[0], q[1]));
+  const geo = new THREE.LatheGeometry(prof, 44);
+  geo.translate(0, -b / 2, 0); geo.rotateX(Math.PI / 2);   // eksen Z, ortalı
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x8f9aa8, metalness: 0.7, roughness: 0.4 })));
+  return { content: g, r: R };
+}
+
+// Rulman (bearing): dış bilezik + iç bilezik + bilyeler
+function buildRulman(p) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x8a95a3, metalness: 0.85, roughness: 0.28 });
+  const ring = (ro, ri) => {
+    const s = new THREE.Shape(); s.absarc(0, 0, ro, 0, Math.PI * 2, false);
+    const h = new THREE.Path(); h.absarc(0, 0, ri, 0, Math.PI * 2, true); s.holes.push(h);
+    const gg = new THREE.ExtrudeGeometry(s, { depth: p.b, bevelEnabled: false, curveSegments: 44 });
+    gg.translate(0, 0, -p.b / 2); return gg;
+  };
+  const roI = p.D / 2 * 0.82, riO = p.d / 2 * 1.18;
+  g.add(new THREE.Mesh(ring(p.D / 2, roI), mat));
+  g.add(new THREE.Mesh(ring(riO, p.d / 2), mat));
+  const rc = (roI + riO) / 2, rBall = Math.max((roI - riO) / 2 * 0.92, 0.4);
+  const nb = Math.max(6, Math.round(rc * 1.1));
+  const bm = new THREE.MeshStandardMaterial({ color: 0xcdd6e0, metalness: 0.9, roughness: 0.12 });
+  for (let i = 0; i < nb; i++) { const a = i / nb * Math.PI * 2; const s = new THREE.Mesh(new THREE.SphereGeometry(rBall, 10, 8), bm); s.position.set(rc * Math.cos(a), rc * Math.sin(a), 0); g.add(s); }
+  return { content: g, r: p.D / 2 };
+}
+
 function buildNut(p) {
   const s = p.d * 1.7, R = s / Math.sqrt(3);
   const shape = new THREE.Shape();
@@ -746,7 +792,7 @@ function buildNut(p) {
 /* ================= Parça yönetimi ================= */
 let parts = [], links = [], motor = { partId: null, rpm: 60, dir: 1 };
 let sel = [], running = false, nextId = 1;
-const counters = { gear: 0, screw: 0, nut: 0, rack: 0, diffscrew: 0, piston: 0, hazne: 0, custom: 0 };
+const counters = { gear: 0, screw: 0, nut: 0, rack: 0, diffscrew: 0, piston: 0, hazne: 0, mil: 0, kasnak: 0, rulman: 0, custom: 0 };
 const GEAR_COLORS = [0x8fa3bf, 0xc9a86a, 0x9fbf8f, 0xbf8f9f, 0x8fbfba];
 
 const PARAM_DEFS = {
@@ -758,10 +804,13 @@ const PARAM_DEFS = {
               ['d2', 'İç çap d₂', 'mm', 1], ['P2', 'İç adım P₂', 'mm', 0.25], ['L2', 'İç boy L₂', 'mm', 5]],
   piston: [['d', 'Piston çapı', 'mm', 0.5], ['L', 'Boy', 'mm', 1]],
   hazne:  [['D', 'İç çap', 'mm', 0.5], ['L', 'Boy', 'mm', 1], ['e', 'Et kalınlığı', 'mm', 0.5]],
+  mil:    [['d', 'Çap', 'mm', 0.5], ['L', 'Boy', 'mm', 1]],
+  kasnak: [['D', 'Çap', 'mm', 1], ['b', 'Genişlik', 'mm', 1], ['d0', 'Delik çapı', 'mm', 1]],
+  rulman: [['D', 'Dış çap', 'mm', 1], ['d', 'İç çap', 'mm', 1], ['b', 'Genişlik', 'mm', 0.5]],
   custom: [['depth', 'Derinlik', 'mm', 1]],
 };
-const TYPE_NAMES = { gear: 'Dişli', rack: 'Kramayer', screw: 'Vida', nut: 'Somun', diffscrew: 'Dif. Vida', piston: 'Piston', hazne: 'Hazne', custom: 'Özel Parça' };
-const TYPE_ICONS = { gear: '⚙', rack: '▬', screw: '🔩', nut: '⬡', diffscrew: '🌀', piston: '⚪', hazne: '💉', custom: '🧩' };
+const TYPE_NAMES = { gear: 'Dişli', rack: 'Kramayer', screw: 'Vida', nut: 'Somun', diffscrew: 'Dif. Vida', piston: 'Piston', hazne: 'Hazne', mil: 'Mil', kasnak: 'Kasnak', rulman: 'Rulman', custom: 'Özel Parça' };
+const TYPE_ICONS = { gear: '⚙', rack: '▬', screw: '🔩', nut: '⬡', diffscrew: '🌀', piston: '⚪', hazne: '💉', mil: '┃', kasnak: '⊙', rulman: '◎', custom: '🧩' };
 const rpOf = g => g.params.m * g.params.z / 2;
 
 function createPart(rec) {
@@ -800,6 +849,9 @@ function rebuildContent(part) {
               : part.type === 'diffscrew' ? buildDiffScrew(part.params)
               : part.type === 'piston' ? buildPiston(part.params)
               : part.type === 'hazne' ? buildHazne(part.params)
+              : part.type === 'mil' ? buildMil(part.params)
+              : part.type === 'kasnak' ? buildKasnak(part.params)
+              : part.type === 'rulman' ? buildRulman(part.params)
               : part.type === 'custom' ? buildCustom(part.params)
               : buildNut(part.params);
   built.content.traverse(o => {
@@ -1118,8 +1170,8 @@ function addLink(type, a, b, extra = {}) {
 
 /* ---- Standart ilişkiler (konumlama) ---- */
 const STD_NAMES = { coincident: 'Çakışık', parallel: 'Paralel', perp: 'Dik', tangent: 'Teğet', concentric: 'Eş merkezli', lock: 'Kilit', dist: 'Mesafe', angle: 'Açı' };
-const isRound = t => t === 'gear' || t === 'screw' || t === 'nut' || t === 'diffscrew' || t === 'piston' || t === 'hazne' || t === 'custom';
-const isRot = t => t === 'gear' || t === 'screw' || t === 'diffscrew' || t === 'custom';
+const isRound = t => ['gear', 'screw', 'nut', 'diffscrew', 'piston', 'hazne', 'mil', 'kasnak', 'rulman', 'custom'].includes(t);
+const isRot = t => ['gear', 'screw', 'diffscrew', 'mil', 'kasnak', 'custom'].includes(t);
 
 function applyStdMate(type, A, B, val) {  // B taşınır/döner
   const dirZ = () => Z_AXIS.clone().applyQuaternion(A.obj.quaternion);
@@ -1281,6 +1333,9 @@ function partVols(p) {
       { kind: 'cyl', r: q.d1 * 0.85, z0: -q.d1 * 0.55, z1: 0 }];
     case 'piston': return [{ kind: 'cyl', r: q.d / 2, z0: 0, z1: q.L }];
     case 'hazne': return [{ kind: 'cyl', r: q.D / 2 + q.e, z0: 0, z1: q.L + 1.6 }];
+    case 'mil': return [{ kind: 'cyl', r: q.d / 2, z0: 0, z1: q.L }];
+    case 'kasnak': return [{ kind: 'cyl', r: q.D / 2, z0: -q.b / 2, z1: q.b / 2 }];
+    case 'rulman': return [{ kind: 'cyl', r: q.D / 2, z0: -q.b / 2, z1: q.b / 2 }];
     case 'rack': return [{ kind: 'box', x0: -q.L / 2, x1: q.L / 2, y0: -1.25 * q.m - q.h, y1: q.m, z0: -q.b / 2, z1: q.b / 2 }];
     case 'custom': {
       const b = p.colBox;
@@ -1613,7 +1668,7 @@ function applyState(d) {
   explodeBase = null;
   if ($('explode')) $('explode').value = 0, $('explodeTxt').textContent = 0;
   clearScene();
-  Object.assign(counters, { gear: 0, screw: 0, nut: 0, rack: 0, diffscrew: 0, piston: 0, hazne: 0, custom: 0 }, d.counters || {});
+  Object.assign(counters, { gear: 0, screw: 0, nut: 0, rack: 0, diffscrew: 0, piston: 0, hazne: 0, mil: 0, kasnak: 0, rulman: 0, custom: 0 }, d.counters || {});
   for (const rec of d.parts || [])
     createPart({ ...rec, pos: new THREE.Vector3(...rec.pos) });
   nextId = d.nextId || (Math.max(0, ...parts.map(p => p.id)) + 1);
@@ -1722,6 +1777,18 @@ $('addHazne').onclick = () => {
   const A = Math.PI * (p.params.D / 2) ** 2;
   statusMsg(`✔ ${p.name} eklendi — kesit ${fmt(A,1)} mm² → 1 mm piston itmesi = ${fmt(A,1)} µL doz.`, 'ok');
 };
+function addSimplePart(type, params, msg) {
+  pushUndo();
+  const p = addPart(type, params);
+  sel = [p.id]; refreshSel(); refreshAll(); save();
+  statusMsg(msg(p), 'ok');
+}
+$('addMil').onclick = () => addSimplePart('mil', { d: 8, L: 60 },
+  p => `✔ ${p.name} eklendi (Ø8·60 mm) — dişli/kasnakla "═ Aynı Mil", motor bağlanabilir.`);
+$('addKasnak').onclick = () => addSimplePart('kasnak', { D: 40, b: 14, d0: 8 },
+  p => `✔ ${p.name} eklendi (Ø40) — mile "═ Aynı Mil" ile takılır, döner.`);
+$('addRulman').onclick = () => addSimplePart('rulman', { D: 22, d: 8, b: 7 },
+  p => `✔ ${p.name} eklendi (22×8×7) — mili destekleyen yatak.`);
 
 $('btnDel').onclick = () => { if (sel.length) { pushUndo(); deletePart(sel[0]); } };
 $('btnMotor').onclick = () => {
@@ -2336,6 +2403,53 @@ function skDraw() {
     skx.fillText('▭ iki köşeye tıkla • ○ merkez + yarıçap • ╱ noktalar, ilk noktada kapanır', cx, cy - 38);
     skx.textAlign = 'left';
   }
+  drawPlaneWidget();
+}
+
+/* --- Düzlem göstergesi (3B, üç düzlem aynı anda) + yumuşak geçiş --- */
+let planeAnim = null;
+const skPlaneWidget = { x: 0, y: 0, r: 54 };
+function drawPlaneWidget() {
+  const S = 30, ox = sk.width - 84, oy = 98;
+  skPlaneWidget.x = ox; skPlaneWidget.y = oy;
+  const iso = (x, y, z) => [ox + (x - z) * S * 0.86, oy + (x + z) * S * 0.5 - y * S];
+  const planes = {
+    top:   { pts: [[-1,0,-1],[1,0,-1],[1,0,1],[-1,0,1]], col: '63,185,80',  lbl: 'Üst' },
+    right: { pts: [[0,-1,-1],[0,1,-1],[0,1,1],[0,-1,1]], col: '240,136,62', lbl: 'Sağ' },
+    front: { pts: [[-1,-1,0],[1,-1,0],[1,1,0],[-1,1,0]], col: '77,163,255', lbl: 'Ön' },
+  };
+  let ap = 1;
+  if (planeAnim) ap = Math.min((performance.now() - planeAnim.t0) / planeAnim.dur, 1);
+  for (const key of ['top', 'right', 'front']) {
+    const P = planes[key], act = key === skPlane;
+    skx.beginPath();
+    P.pts.forEach((p, i) => { const [x, y] = iso(...p); i ? skx.lineTo(x, y) : skx.moveTo(x, y); });
+    skx.closePath();
+    let a = act ? 0.5 : 0.09, lw = act ? 2 : 1;
+    if (act && planeAnim && planeAnim.to === key) { a = 0.1 + 0.45 * ap; lw = 1 + 2.4 * ap; }
+    skx.fillStyle = `rgba(${P.col},${a})`;
+    skx.strokeStyle = `rgba(${P.col},${act ? 0.95 : 0.4})`;
+    skx.lineWidth = lw; skx.fill(); skx.stroke();
+  }
+  skx.fillStyle = `rgb(${planes[skPlane].col})`;
+  skx.font = 'bold 12px Segoe UI'; skx.textAlign = 'center';
+  skx.fillText(planes[skPlane].lbl + ' düzlemi', ox, oy + 52);
+  skx.font = '9px Segoe UI'; skx.fillStyle = 'rgba(139,148,158,.75)';
+  skx.fillText('(tıkla → değiştir)', ox, oy + 64);
+  skx.textAlign = 'left';
+}
+function tickPlaneAnim() {
+  if (!planeAnim) return;
+  skDraw();
+  if (performance.now() - planeAnim.t0 < planeAnim.dur) requestAnimationFrame(tickPlaneAnim);
+  else { planeAnim = null; skDraw(); }
+}
+function setPlane(pl) {
+  if (pl === skPlane) return;
+  planeAnim = { to: pl, t0: performance.now(), dur: 340 };
+  skPlane = pl; setPlaneUI();
+  skStatus(`Düzlem: ${{ front: 'Ön', top: 'Üst', right: 'Sağ' }[pl]} — çizdiğin katı bu düzleme göre yönlenir.`);
+  tickPlaneAnim();
 }
 
 function skClick(p) {
@@ -2463,6 +2577,12 @@ function showDimBox() {
 sk.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   hideSkMenu();
+  // düzlem göstergesine tıklama → sıradaki düzleme yumuşak geçiş
+  if (Math.hypot(e.clientX - skPlaneWidget.x, e.clientY - skPlaneWidget.y) < skPlaneWidget.r) {
+    const order = ['front', 'top', 'right'];
+    setPlane(order[(order.indexOf(skPlane) + 1) % 3]);
+    return;
+  }
   if (skTool === 'sel') { skSel = skPickPx(e.clientX, e.clientY); showDimBox(); skDraw(); return; }
   skClick(resolvePoint(e.clientX, e.clientY));
 });
@@ -2541,8 +2661,7 @@ function setPlaneUI() {
   $(skPlane === 'top' ? 'plTop' : skPlane === 'right' ? 'plRight' : 'plFront').classList.add('active');
 }
 for (const [id, pl] of [['plFront', 'front'], ['plTop', 'top'], ['plRight', 'right']]) {
-  $(id).onclick = () => { skPlane = pl; setPlaneUI(); skDraw();
-    skStatus(`Düzlem: ${{front:'Ön',top:'Üst',right:'Sağ'}[pl]} — çizdiğin katı bu düzleme göre yönlenir.`); };
+  $(id).onclick = () => setPlane(pl);
 }
 // Kesme modu (katıdan çıkar)
 function setCutUI() {
