@@ -169,7 +169,7 @@
 <div id="tabs">
   <button class="tab active" id="tabAsm">🏗 Montaj</button>
   <button class="tab" id="tabDesign">✏️ Parça Tasarımı</button>
-  <span style="align-self:center;font-size:10px;color:var(--muted);padding:0 8px">v7.8</span>
+  <span style="align-self:center;font-size:10px;color:var(--muted);padding:0 8px">v7.9</span>
 </div>
 
 <div id="designPanel" style="display:none">
@@ -361,6 +361,11 @@
   <div class="row"><label>Motor redüktör oranı</label><input type="number" id="dGbox" value="1000" step="1"><span class="unit">:1</span></div>
   <div class="row"><label>1 Ünite =</label><input type="number" id="dUnit" value="10" step="1"><span class="unit">µL</span></div>
   <table class="res" id="doseOut"></table>
+
+  <h2>⚙ Tork & Kuvvet</h2>
+  <div class="row"><label>Motor çıkış torku</label><input type="number" id="fTorq" value="300" step="10"><span class="unit">mNm</span></div>
+  <div class="row"><label>Vida verimi η</label><input type="number" id="fEta" value="30" step="5"><span class="unit">%</span></div>
+  <table class="res" id="forceOut"></table>
 
   <h2>Dosya & Kayıt · CAD</h2>
   <div class="btnrow">
@@ -1548,6 +1553,7 @@ function refreshSpeeds() {
     if (S && w) t.innerHTML += `<tr><td>🌀 ${S.name} (eksenel)</td><td>${fmt(w / (2 * Math.PI) * S.params.P1, 2)} mm/s</td></tr>`;
   }
   computeDose();
+  computeForce();
 }
 
 // Doz hassasiyeti: pompa zincirinden (vida net ilerleme + rezervuar kesiti + encoder) çözünürlük hesabı
@@ -1587,6 +1593,43 @@ function computeDose() {
     `<tr><td>1 encoder adımı</td><td>${F(mmPerCount * 1000, 3)} µm = ${F(volPerCount, 4)} µL</td></tr>` +
     `<tr><td><b>En küçük doz</b></td><td><b>${F(volPerCount / uL, 4)} Ü</b></td></tr>` +
     `<tr><td>1 Ünite için</td><td>${F(uL / volPerCount, 0)} adım · ${F(motorRevPerUnit, 1)} motor devri</td></tr>`;
+}
+
+// Tork & kuvvet: motor torku → vida ekseni kuvveti → piston kuvveti → rezervuar basıncı
+function computeForce() {
+  const out = $('forceOut'); if (!out) return;
+  const cyl = links.find(l => l.type === 'cyl');
+  const diff = links.find(l => l.type === 'diff');
+  const scr = links.find(l => l.type === 'screw');
+  let screwPart = null, lead = 0;
+  if (diff) { screwPart = byId(diff.a); lead = screwPart.params.P1 - screwPart.params.P2; }
+  else if (scr) { screwPart = byId(scr.a); lead = screwPart.params.P; }
+  if (!screwPart || !(lead > 0)) {
+    out.innerHTML = '<tr><td class="empty">Vida + somun kur → tork/kuvvet otomatik hesaplanır.</td></tr>';
+    return;
+  }
+  const Tm = Math.max(+$('fTorq').value || 0, 0);            // mNm = N·mm
+  const eta = clampN((+$('fEta').value || 30) / 100, 0.01, 1);
+  let gearRatio = 1;
+  if (motor.partId != null) {
+    const { omega } = solveSpeeds();
+    const wm = omega.get(motor.partId), ws = omega.get(screwPart.id);
+    if (wm && ws) gearRatio = Math.abs(wm / ws);
+  }
+  const Ts = Tm * gearRatio;                                 // vida torku (N·mm)
+  const Fax = 2 * Math.PI * eta * Ts / lead;                 // vida ekseni kuvveti (N)
+  const F = (x, d) => fmt(x, d);
+  let rows =
+    `<tr><td>Vida torku</td><td>${F(Ts, 0)} mNm</td></tr>` +
+    `<tr><td>Vida ekseni kuvveti</td><td><b>${F(Fax, 1)} N</b></td></tr>` +
+    `<tr><td>Piston kuvveti</td><td>${F(Fax, 1)} N ≈ ${F(Fax / 9.81, 1)} kg</td></tr>`;
+  const haz = cyl ? byId(cyl.b) : null;
+  if (haz) {
+    const A = Math.PI * (haz.params.D / 2) ** 2;             // mm²
+    const P = Fax / A;                                        // N/mm² = MPa
+    rows += `<tr><td>Rezervuar basıncı</td><td>${F(P, 3)} MPa = ${F(P * 10, 1)} bar</td></tr>`;
+  }
+  out.innerHTML = rows;
 }
 
 /* ================= STL dışa aktarım (CAD / 3B baskı, mm) ================= */
@@ -2024,6 +2067,7 @@ $('btnSave').onclick = () => {
 };
 // Doz hassasiyeti girdileri → anında yeniden hesapla
 for (const id of ['dEnc', 'dGbox', 'dUnit']) $(id).addEventListener('input', computeDose);
+for (const id of ['fTorq', 'fEta']) $(id).addEventListener('input', computeForce);
 
 // STL dışa aktarım: tek parça seçiliyse onu, değilse tüm montajı
 $('btnSTL').onclick = () => {
