@@ -220,6 +220,8 @@
     <button id="fRevolve" title="Profili düşey eksen etrafında döndürür">⟳ Döndür</button>
   </div>
   <div class="sub" style="margin-top:4px">Döndür: profil, ortadaki turuncu düşey eksen etrafında çevrilir (mil, kasnak, hazne gibi).</div>
+  <label class="chk" style="margin-top:8px"><input type="checkbox" id="previewOn" checked> 👁 Canlı 3B önizleme <span class="sub">(sağ-alt köşe)</span></label>
+  <label class="chk"><input type="checkbox" id="previewRev"> Önizlemeyi <b>döndürme</b> olarak göster</label>
 
   <h2>Montaja Ekle</h2>
   <div class="row"><label>Parça adı</label><input type="text" id="dName" placeholder="Pompa Gövdesi" style="width:150px;background:#0d1117;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:3px 6px;font-size:12.5px"></div>
@@ -722,12 +724,12 @@ function polyCentroid(pts) {
   return { x: x / pts.length, y: y / pts.length };
 }
 
-function buildCustom(p) {
-  const g = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: p.color || 0x9fb4c8, metalness: 0.7, roughness: 0.4 });
+// Çizim şekillerinden geometri (ekstrüzyon/döndürme) — hem parça hem canlı önizleme kullanır
+function customGeo(shapes, op, depth, plane) {
+  if (!shapes || !shapes.some(s => !s.hole)) return null;
   let geo;
-  if (p.op === 'revolve') {
-    const src = p.shapes.find(s => !s.hole);
+  if (op === 'revolve') {
+    const src = shapes.find(s => !s.hole);
     let prof = [];
     if (src.kind === 'circle') {
       for (let i = 0; i <= 24; i++) {
@@ -735,21 +737,24 @@ function buildCustom(p) {
         prof.push(new THREE.Vector2(Math.max(Math.abs(src.cx + src.r * Math.cos(a)), 0.05), src.cy + src.r * Math.sin(a)));
       }
     } else {
+      if (!src.pts || src.pts.length < 3) return null;
       prof = src.pts.map(q => new THREE.Vector2(Math.max(Math.abs(q.x), 0.05), q.y));
       prof.push(prof[0].clone()); // profili kapat
     }
     geo = new THREE.LatheGeometry(prof, 48);
     geo.rotateX(Math.PI / 2); // eksen Z olsun (diğer parçalarla uyumlu)
   } else {
-    const shapes = [], srcs = [];
-    for (const s of p.shapes) {
+    const outs = [], srcs = [];
+    for (const s of shapes) {
       if (s.hole) continue;
+      if (s.kind !== 'circle' && (!s.pts || s.pts.length < 3)) continue;
       const shape = new THREE.Shape();
       if (s.kind === 'circle') shape.absarc(s.cx, s.cy, s.r, 0, Math.PI * 2, false);
       else { shape.setFromPoints(s.pts.map(q => new THREE.Vector2(q.x, q.y))); shape.closePath(); }
-      shapes.push(shape); srcs.push(s);
+      outs.push(shape); srcs.push(s);
     }
-    for (const s of p.shapes) {
+    if (!outs.length) return null;
+    for (const s of shapes) {
       if (!s.hole) continue;
       const cen = s.kind === 'circle' ? { x: s.cx, y: s.cy } : polyCentroid(s.pts);
       const idx = srcs.findIndex(o =>
@@ -758,15 +763,22 @@ function buildCustom(p) {
         const h = new THREE.Path();
         if (s.kind === 'circle') h.absarc(s.cx, s.cy, s.r, 0, Math.PI * 2, true);
         else { s.pts.forEach((q, i) => i ? h.lineTo(q.x, q.y) : h.moveTo(q.x, q.y)); h.closePath(); }
-        shapes[idx].holes.push(h);
+        outs[idx].holes.push(h);
       }
     }
-    geo = new THREE.ExtrudeGeometry(shapes, { depth: p.depth || 10, bevelEnabled: false, curveSegments: 24 });
-    geo.translate(0, 0, -(p.depth || 10) / 2);
+    geo = new THREE.ExtrudeGeometry(outs, { depth: depth || 10, bevelEnabled: false, curveSegments: 24 });
+    geo.translate(0, 0, -(depth || 10) / 2);
   }
   // düzlem yönlendirmesi: front=XY (varsayılan) · top=XZ · right=YZ
-  if (p.plane === 'top') geo.rotateX(-Math.PI / 2);
-  else if (p.plane === 'right') geo.rotateY(Math.PI / 2);
+  if (plane === 'top') geo.rotateX(-Math.PI / 2);
+  else if (plane === 'right') geo.rotateY(Math.PI / 2);
+  return geo;
+}
+
+function buildCustom(p) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: p.color || 0x9fb4c8, metalness: 0.7, roughness: 0.4 });
+  const geo = customGeo(p.shapes, p.op, p.depth || 10, p.plane) || new THREE.BoxGeometry(1, 1, 1);
   geo.computeBoundingSphere();
   geo.computeBoundingBox();
   g.add(new THREE.Mesh(geo, mat));
@@ -1955,6 +1967,7 @@ function tick() {
   updatePump(vlin);
   orbit.update();
   renderer.render(scene, camera);
+  renderPreviewInset();               // çizim modunda sağ-alt köşede canlı 3B önizleme
 }
 
 // Pompa analizi + sıvı görseli: piston yüzeyinin haznedeki konumundan debi/hacim hesabı (mm³ = µL)
@@ -2705,6 +2718,46 @@ let skShapes = [], skTool = null, skPts = [], skMouse = null;
 let skSel = null, skHover = null;   // seç/ölçü aracı: seçili ve üzerine gelinen kenar/daire
 let skCutMode = false, skPlane = 'front';   // kesme modu + çizim düzlemi
 let skUndoStack = [];                        // çizim geri-alma yığını
+
+/* --- 👁 Canlı 3B önizleme: çizilen profil, seçili düzlemde gerçek katı olarak sağ-alt köşede --- */
+const PIP = { w: 300, h: 220, m: 16 };       // önizleme penceresi (2B tuval sağ-alt)
+let previewMesh = null, _prevSig = '';
+const previewCam = new THREE.PerspectiveCamera(45, PIP.w / PIP.h, 0.5, 8000);
+const previewMat = new THREE.MeshStandardMaterial({ color: 0x4da3ff, emissive: 0x0a2a4a, metalness: 0.3, roughness: 0.5, transparent: true, opacity: 0.78 });
+const previewIsOn = () => $('previewOn') ? $('previewOn').checked : true;
+const previewOp = () => ($('previewRev') && $('previewRev').checked) ? 'revolve' : 'extrude';
+function clearPreview() { if (previewMesh) { scene.remove(previewMesh); previewMesh.geometry.dispose(); previewMesh = null; } _prevSig = ''; }
+function updateSketchPreview() {
+  if (!designMode || !previewIsOn()) { clearPreview(); return; }
+  const depth = Math.max(+$('dDepth').value || 10, 0.5), op = previewOp();
+  const sig = op + '|' + depth + '|' + skPlane + '|' + bossParentId + '|' + JSON.stringify(skShapes);
+  if (sig === _prevSig) return;               // değişmediyse yeniden kurma (fare hareketinde ucuz)
+  _prevSig = sig;
+  const geo = customGeo(skShapes, op, depth, skPlane);
+  clearPreview(); _prevSig = sig;
+  if (!geo) return;
+  geo.computeBoundingSphere();
+  previewMesh = new THREE.Mesh(geo, previewMat);
+  previewMesh.userData.noShadow = true;
+  if (bossParentId && byId(bossParentId)) {   // yüzeye çizim: kabartmayı ebeveynin üst yüzeyine oturt
+    const par = byId(bossParentId), box = new THREE.Box3().setFromObject(par.obj);
+    previewMesh.position.set(par.obj.position.x, par.obj.position.y, box.max.z + depth / 2);
+  }
+  scene.add(previewMesh);
+}
+function renderPreviewInset() {
+  if (!designMode || !previewIsOn() || !previewMesh) return;
+  const dpr = renderer.getPixelRatio(), W = renderer.domElement.width, H = renderer.domElement.height;
+  const pw = PIP.w * dpr, ph = PIP.h * dpr, px = W - pw - PIP.m * dpr, py = PIP.m * dpr;  // WebGL: y aşağıdan → sağ-alt
+  const c = previewMesh.geometry.boundingSphere.center.clone().add(previewMesh.position);
+  const rad = Math.max(previewMesh.geometry.boundingSphere.radius, 6);
+  previewCam.position.copy(c).add(new THREE.Vector3(0.75, 0.6, 1).normalize().multiplyScalar(rad * 3.3));
+  previewCam.lookAt(c); previewCam.updateProjectionMatrix();
+  renderer.setScissorTest(true);
+  renderer.setViewport(px, py, pw, ph); renderer.setScissor(px, py, pw, ph);
+  renderer.render(scene, previewCam);
+  renderer.setScissorTest(false); renderer.setViewport(0, 0, W, H);
+}
 function skSnapshot() { skUndoStack.push(JSON.stringify(skShapes)); if (skUndoStack.length > 80) skUndoStack.shift(); }
 function skUndoDo() {
   if (skPts.length) { skPts = []; skDraw(); skStatus('Çizim adımı iptal edildi.'); return; }
@@ -2906,6 +2959,21 @@ function skDraw() {
     skx.textAlign = 'left';
   }
   drawPlaneWidget();
+  // 👁 Canlı 3B önizleme penceresi: hayaleti güncelle + sağ-alt köşeyi şeffaf bırak (alttaki 3B tuval görünsün)
+  updateSketchPreview();
+  if (previewIsOn()) {
+    const rx = w - PIP.w - PIP.m, ry = h - PIP.h - PIP.m;
+    skx.clearRect(rx, ry, PIP.w, PIP.h);
+    skx.strokeStyle = '#4da3ff'; skx.lineWidth = 1.5; skx.strokeRect(rx, ry, PIP.w, PIP.h);
+    skx.fillStyle = 'rgba(13,17,23,.82)'; skx.fillRect(rx, ry, 176, 21);
+    skx.fillStyle = '#4da3ff'; skx.font = 'bold 11px Segoe UI';
+    skx.fillText('👁 Canlı 3B · ' + (previewOp() === 'revolve' ? 'Döndür' : 'Ekstrüzyon'), rx + 8, ry + 15);
+    if (!previewMesh) {
+      skx.fillStyle = 'rgba(139,148,158,.85)'; skx.font = '11px Segoe UI'; skx.textAlign = 'center';
+      skx.fillText('kapalı profil çiz → katı burada belirir', rx + PIP.w / 2, ry + PIP.h / 2);
+      skx.textAlign = 'left';
+    }
+  }
 }
 
 /* --- Düzlem göstergesi (3B, üç düzlem aynı anda) + yumuşak geçiş --- */
@@ -3254,6 +3322,9 @@ $('btnFaceSketch').onclick = () => {
 };
 $('fExtrude').onclick = () => addCustomPart('extrude');
 $('fRevolve').onclick = () => addCustomPart('revolve');
+// canlı önizleme kontrolleri
+for (const id of ['previewOn', 'previewRev']) $(id).addEventListener('change', () => { if (!previewIsOn()) clearPreview(); if (designMode) skDraw(); });
+$('dDepth').addEventListener('input', () => { if (designMode) skDraw(); });
 
 /* Sekmeler */
 function setTab(t) {
@@ -3265,7 +3336,7 @@ function setTab(t) {
   $('designPanel').style.display = d ? '' : 'none';
   sk.style.display = d ? 'block' : 'none';   // CSS'teki display:none kuralını inline 'block' ezer
   if (d && !skTool) $('tRect').click();       // boş araçla başlama — ölü tıklama olmasın
-  if (!d) { editingId = null; bossParentId = null; }   // montaja dönünce düzenleme/kabartma modu biter
+  if (!d) { editingId = null; bossParentId = null; clearPreview(); }   // montaja dönünce düzenleme/kabartma + önizleme biter
   if (d) { guideWasVisible = $('guide').style.display !== 'none'; $('guide').style.display = 'none'; }
   else if (guideWasVisible) $('guide').style.display = '';
   $('hint').innerHTML = d
