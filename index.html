@@ -294,6 +294,14 @@
     <button id="addKama" title="Kama — mil-göbek bağlantısı">▭ Kama</button>
     <button id="addPul" title="Pul (washer)">○ Pul</button>
   </div>
+  <div class="sub" style="margin:12px 0 4px">🚗 Araba — aktarma organı:</div>
+  <div class="btnrow">
+    <button id="addWheel" title="Teker (lastik + jant) — diferansiyele bağlanır, döner">🛞 Teker</button>
+    <button id="addGearbox" title="Çok kademeli vites kutusu — vitesi seç, oran değişsin">🔀 Vites Kutusu</button>
+  </div>
+  <div class="btnrow" style="margin-top:6px">
+    <button id="addDifferential" title="Diferansiyel — nihai tahvil + gücü iki tekere böler">⊗ Diferansiyel</button>
+  </div>
   </div><!-- /subParts -->
 
   <div class="subpage" id="subLinks">
@@ -310,6 +318,9 @@
   <div class="btnrow" style="margin-top:6px">
     <button id="matePush" title="Somun/kramayer pistonu iter">⬡⚪ Pistonu İt</button>
     <button id="mateCyl" title="Pistonu hazneye yerleştir">⚪💉 Hazneye Tak</button>
+  </div>
+  <div class="btnrow" style="margin-top:6px">
+    <button id="mateDrive" title="Aktarma: seçili A→B (motor→vites→diferansiyel→teker). Sıra: sürücüyü önce seç.">⚙→ Aktar (Drivetrain)</button>
   </div>
   <div class="sub" style="margin:10px 0 4px">Standart ilişkiler:</div>
   <div class="btnrow">
@@ -370,6 +381,18 @@
   <h2>📊 Ek Hesaplar</h2>
   <div class="row"><label>Sürtünme katsayısı μ</label><input type="number" id="fMu" value="0.15" step="0.05"></div>
   <table class="res" id="extraOut"></table>
+
+  <h2 id="drvHead" style="display:none">🚗 Aktarma Organı</h2>
+  <div id="drvBox" style="display:none">
+    <div class="row" style="align-items:center">
+      <label>Aktif vites</label>
+      <button id="gearDown" style="width:34px">−</button>
+      <b id="gearNow" style="min-width:56px;text-align:center;display:inline-block">1 / 5</b>
+      <button id="gearUp" style="width:34px">+</button>
+    </div>
+    <table class="res" id="drvOut"></table>
+  </div>
+
   <div class="btnrow" style="margin-top:8px">
     <button id="btnReport" title="Tüm analizi panoya kopyala ve .txt indir">📄 Analiz Raporu</button>
   </div>
@@ -886,10 +909,65 @@ function buildNut(p) {
   return { content: g, r: R };
 }
 
+// eksen Z boyunca ortalanmış halka (annulus) — teker/jant için yardımcı
+function annulusZ(ro, ri, depth, seg = 48) {
+  const s = new THREE.Shape(); s.absarc(0, 0, ro, 0, Math.PI * 2, false);
+  const h = new THREE.Path(); h.absarc(0, 0, Math.max(ri, 0.2), 0, Math.PI * 2, true); s.holes.push(h);
+  const gg = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: false, curveSegments: seg });
+  gg.translate(0, 0, -depth / 2); return gg;
+}
+// 🛞 Teker: kauçuk lastik + metal jant + 5 kollu göbek (eksen Z)
+function buildWheel(p) {
+  const R = p.D / 2, wi = p.w, rimR = clampN(p.rim / 2, R * 0.25, R * 0.95);
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(annulusZ(R, rimR, wi), new THREE.MeshStandardMaterial({ color: 0x1b1d22, metalness: 0.1, roughness: 0.85 })));
+  const jantMat = new THREE.MeshStandardMaterial({ color: 0xb9c2cc, metalness: 0.85, roughness: 0.25 });
+  g.add(new THREE.Mesh(annulusZ(rimR * 1.02, Math.max(rimR * 0.26, 2), wi * 0.55), jantMat));
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(rimR * 0.3, rimR * 0.3, wi * 0.6, 24), jantMat);
+  hub.rotation.x = Math.PI / 2; g.add(hub);
+  for (let i = 0; i < 5; i++) {
+    const a = i / 5 * Math.PI * 2, sp = new THREE.Mesh(new THREE.BoxGeometry(rimR * 0.62, rimR * 0.14, wi * 0.4), jantMat);
+    sp.position.set(Math.cos(a) * rimR * 0.5, Math.sin(a) * rimR * 0.5, 0); sp.rotation.z = a; g.add(sp);
+  }
+  return { content: g, r: R };
+}
+// 🔀 Vites kutusu: gövde + dişli yığını (kademe halkaları) + giriş/çıkış mili (eksen Z)
+function buildGearbox(p) {
+  const g = new THREE.Group(), R = p.D / 2, L = p.L;
+  const caseMat = new THREE.MeshStandardMaterial({ color: 0x5f6b7a, metalness: 0.65, roughness: 0.45 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(R, R, L * 0.66, 40), caseMat);
+  body.rotation.x = Math.PI / 2; body.position.z = L / 2; g.add(body);
+  const gearMat = new THREE.MeshStandardMaterial({ color: 0x8f9aa8, metalness: 0.8, roughness: 0.3 });
+  const rings = clampN(Math.round(p.gears) || 3, 2, 6);
+  for (let i = 0; i < rings; i++) {
+    const rr = R * (0.55 + 0.42 * i / rings), ring = new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, L * 0.11, 32), gearMat);
+    ring.rotation.x = Math.PI / 2; ring.position.z = L * 0.16 + i * (L * 0.6 / rings); g.add(ring);
+  }
+  const shaftMat = new THREE.MeshStandardMaterial({ color: 0x9aa7b5, metalness: 0.85, roughness: 0.3 });
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.16, R * 0.16, L * 1.25, 24), shaftMat);
+  shaft.rotation.x = Math.PI / 2; shaft.position.z = L / 2; g.add(shaft);
+  return { content: g, r: R };
+}
+// ⊗ Diferansiyel: taşıyıcı + taç dişli + iki yarım aks (eksen Z, ±track/2)
+function buildDifferential(p) {
+  const g = new THREE.Group(), R = p.D / 2, tr = p.track;
+  const carMat = new THREE.MeshStandardMaterial({ color: 0x5f6b7a, metalness: 0.65, roughness: 0.45 });
+  g.add(new THREE.Mesh(new THREE.SphereGeometry(R * 0.55, 26, 18), carMat));
+  const ring = new THREE.Mesh(new THREE.CylinderGeometry(R, R, R * 0.2, 44), new THREE.MeshStandardMaterial({ color: 0x8f9aa8, metalness: 0.8, roughness: 0.3 }));
+  ring.rotation.x = Math.PI / 2; g.add(ring);
+  const shaftMat = new THREE.MeshStandardMaterial({ color: 0x9aa7b5, metalness: 0.85, roughness: 0.3 });
+  const half = Math.max(tr / 2 - R * 0.5, 4);
+  for (const s of [1, -1]) {
+    const sh = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.16, R * 0.16, half, 24), shaftMat);
+    sh.rotation.x = Math.PI / 2; sh.position.z = s * (R * 0.5 + half / 2); g.add(sh);
+  }
+  return { content: g, r: R };
+}
+
 /* ================= Parça yönetimi ================= */
 let parts = [], links = [], motor = { partId: null, rpm: 60, dir: 1 };
 let sel = [], running = false, nextId = 1;
-const counters = { gear: 0, screw: 0, nut: 0, rack: 0, diffscrew: 0, piston: 0, hazne: 0, mil: 0, kasnak: 0, rulman: 0, kaplin: 0, kam: 0, sprocket: 0, yay: 0, kama: 0, pul: 0, custom: 0 };
+const counters = { gear: 0, screw: 0, nut: 0, rack: 0, diffscrew: 0, piston: 0, hazne: 0, mil: 0, kasnak: 0, rulman: 0, kaplin: 0, kam: 0, sprocket: 0, yay: 0, kama: 0, pul: 0, wheel: 0, gearbox: 0, differential: 0, custom: 0 };
 const GEAR_COLORS = [0x8fa3bf, 0xc9a86a, 0x9fbf8f, 0xbf8f9f, 0x8fbfba];
 
 const PARAM_DEFS = {
@@ -910,10 +988,13 @@ const PARAM_DEFS = {
   yay:    [['D', 'Çap', 'mm', 1], ['d', 'Tel çapı', 'mm', 0.5], ['L', 'Boy', 'mm', 2], ['n', 'Sarım', '', 1]],
   kama:   [['L', 'Boy', 'mm', 1], ['w', 'Genişlik', 'mm', 0.5], ['h', 'Yükseklik', 'mm', 0.5]],
   pul:    [['D', 'Dış çap', 'mm', 1], ['d', 'İç çap', 'mm', 1], ['b', 'Kalınlık', 'mm', 0.5]],
+  wheel:  [['D', 'Dış çap (lastik)', 'mm', 5], ['w', 'Genişlik', 'mm', 2], ['rim', 'Jant çapı', 'mm', 2]],
+  gearbox: [['gears', 'Vites sayısı', '', 1], ['gear', 'Aktif vites', '', 1], ['ratio1', '1. vites oranı', ':1', 0.1], ['ratioTop', 'Son vites oranı', ':1', 0.1], ['D', 'Kutu çapı', 'mm', 2], ['L', 'Kutu boyu', 'mm', 2]],
+  differential: [['fd', 'Nihai tahvil', ':1', 0.1], ['D', 'Taç dişli çapı', 'mm', 2], ['track', 'Aks açıklığı', 'mm', 5]],
   custom: [['depth', 'Derinlik', 'mm', 1]],
 };
-const TYPE_NAMES = { gear: 'Dişli', rack: 'Kramayer', screw: 'Vida', nut: 'Somun', diffscrew: 'Dif. Vida', piston: 'Piston', hazne: 'Hazne', mil: 'Mil', kasnak: 'Kasnak', rulman: 'Rulman', kaplin: 'Kaplin', kam: 'Kam', sprocket: 'Zincir Dişlisi', yay: 'Yay', kama: 'Kama', pul: 'Pul', custom: 'Özel Parça' };
-const TYPE_ICONS = { gear: '⚙', rack: '▬', screw: '🔩', nut: '⬡', diffscrew: '🌀', piston: '⚪', hazne: '💉', mil: '┃', kasnak: '⊙', rulman: '◎', kaplin: '╪', kam: '◑', sprocket: '✲', yay: '∿', kama: '▭', pul: '○', custom: '🧩' };
+const TYPE_NAMES = { gear: 'Dişli', rack: 'Kramayer', screw: 'Vida', nut: 'Somun', diffscrew: 'Dif. Vida', piston: 'Piston', hazne: 'Hazne', mil: 'Mil', kasnak: 'Kasnak', rulman: 'Rulman', kaplin: 'Kaplin', kam: 'Kam', sprocket: 'Zincir Dişlisi', yay: 'Yay', kama: 'Kama', pul: 'Pul', wheel: 'Teker', gearbox: 'Vites Kutusu', differential: 'Diferansiyel', custom: 'Özel Parça' };
+const TYPE_ICONS = { gear: '⚙', rack: '▬', screw: '🔩', nut: '⬡', diffscrew: '🌀', piston: '⚪', hazne: '💉', mil: '┃', kasnak: '⊙', rulman: '◎', kaplin: '╪', kam: '◑', sprocket: '✲', yay: '∿', kama: '▭', pul: '○', wheel: '🛞', gearbox: '🔀', differential: '⊗', custom: '🧩' };
 const rpOf = g => g.params.m * g.params.z / 2;
 
 function createPart(rec) {
@@ -961,6 +1042,9 @@ function rebuildContent(part) {
               : part.type === 'yay' ? buildYay(part.params)
               : part.type === 'kama' ? buildKama(part.params)
               : part.type === 'pul' ? buildPul(part.params)
+              : part.type === 'wheel' ? buildWheel(part.params)
+              : part.type === 'gearbox' ? buildGearbox(part.params)
+              : part.type === 'differential' ? buildDifferential(part.params)
               : part.type === 'custom' ? buildCustom(part.params)
               : buildNut(part.params);
   built.content.traverse(o => {
@@ -1109,7 +1193,7 @@ function checkPartWarnings(p) {
 
 const LINK_LABEL = {
   gear: '⚙⚙ kavraşma', shaft: '═ aynı mil', screw: '🔩⬡ vida-somun', rack: '⚙▬ kramayer',
-  diff: '🌀⬡ dif. vida', push: '⬡⚪ itici', cyl: '⚪💉 silindir',
+  diff: '🌀⬡ dif. vida', push: '⬡⚪ itici', cyl: '⚪💉 silindir', drive: '⚙→ aktarma',
   coincident: '🧷 çakışık', parallel: '∥ paralel', perp: '⊥ dik',
   tangent: '◯ teğet', concentric: '◎ eş merkez', lock: '🔒 kilit', dist: '↔ mesafe', angle: '∠ açı',
 };
@@ -1205,6 +1289,29 @@ function doPushMate(N, P) {  // N: itici (somun/kramayer), P: piston — piston 
   return true;
 }
 
+// Aktarma organı bağlantısı: A → B (motor→vites→diferansiyel→teker). Oran driveStep ile.
+function doDriveMate(A, B) {
+  if (!isRot(A.type) || !isRot(B.type)) {
+    statusMsg('⚠ Aktarma için dönen parçalar seç (vites, diferansiyel, teker, mil, dişli).', 'bad');
+    return false;
+  }
+  pushUndo();
+  B.obj.quaternion.copy(A.obj.quaternion);
+  const dir = Z_AXIS.clone().applyQuaternion(A.obj.quaternion);
+  if (A.type === 'differential') {                 // iki tekeri karşılıklı yerleştir
+    const n = links.filter(l => l.type === 'drive' && l.a === A.id).length;
+    const sign = n % 2 === 0 ? 1 : -1;
+    B.obj.position.copy(A.obj.position).addScaledVector(dir, sign * A.params.track / 2);
+  } else {
+    const gap = (A.r || 20) + (B.r || 20) + 10;
+    B.obj.position.copy(A.obj.position).addScaledVector(dir, gap);
+  }
+  addLink('drive', A.id, B.id);
+  const R = driveStep(A, B);
+  statusMsg(`✔ ${A.name} → ${B.name}: aktarma bağlandı${R !== 1 ? ` (oran ${fmt(R, 2)}:1)` : ''}.`, 'ok');
+  return true;
+}
+
 function doCylMate(P, H) {  // piston hazneye girer; piston iticiye bağlıysa hazne pistona gelir
   const gap = H.params.D - P.params.d;
   if (gap < 0) {
@@ -1279,8 +1386,8 @@ function addLink(type, a, b, extra = {}) {
 
 /* ---- Standart ilişkiler (konumlama) ---- */
 const STD_NAMES = { coincident: 'Çakışık', parallel: 'Paralel', perp: 'Dik', tangent: 'Teğet', concentric: 'Eş merkezli', lock: 'Kilit', dist: 'Mesafe', angle: 'Açı' };
-const isRound = t => ['gear', 'screw', 'nut', 'diffscrew', 'piston', 'hazne', 'mil', 'kasnak', 'rulman', 'kaplin', 'kam', 'sprocket', 'yay', 'pul', 'custom'].includes(t);
-const isRot = t => ['gear', 'screw', 'diffscrew', 'mil', 'kasnak', 'kaplin', 'kam', 'sprocket', 'custom'].includes(t);
+const isRound = t => ['gear', 'screw', 'nut', 'diffscrew', 'piston', 'hazne', 'mil', 'kasnak', 'rulman', 'kaplin', 'kam', 'sprocket', 'yay', 'pul', 'wheel', 'gearbox', 'differential', 'custom'].includes(t);
+const isRot = t => ['gear', 'screw', 'diffscrew', 'mil', 'kasnak', 'kaplin', 'kam', 'sprocket', 'wheel', 'gearbox', 'differential', 'custom'].includes(t);
 
 function applyStdMate(type, A, B, val) {  // B taşınır/döner
   const dirZ = () => Z_AXIS.clone().applyQuaternion(A.obj.quaternion);
@@ -1516,6 +1623,21 @@ function applyHighlights() {
 }
 
 /* ================= Kinematik çözüm ================= */
+// Vites kutusu oranı: 1. vites (en yüksek) ile son vites arasında geometrik interpolasyon
+function gearboxRatio(gb) {
+  const n = Math.max(Math.round(gb.params.gears) || 1, 1);
+  const g = clampN(Math.round(gb.params.gear) || 1, 1, n);
+  const r1 = Math.max(gb.params.ratio1 || 1, 0.05), rt = Math.max(gb.params.ratioTop || 1, 0.05);
+  return n === 1 ? r1 : r1 * Math.pow(rt / r1, (g - 1) / (n - 1));
+}
+// A→B aktarma azaltma oranı (ωB = ωA / R): vites çıkışta, diferansiyel girişte azaltır
+function driveStep(A, B) {
+  let R = 1;
+  if (A && A.type === 'gearbox') R *= gearboxRatio(A);
+  if (B && B.type === 'differential') R *= Math.max(B.params.fd || 1, 0.01);
+  return R;
+}
+
 function solveSpeeds() {
   const omega = new Map(), vlin = new Map();
   if (motor.partId == null || !byId(motor.partId)) return { omega, vlin };
@@ -1534,6 +1656,10 @@ function solveSpeeds() {
       else if (l.type === 'diff' && l.a === cur) vlin.set(other, wc / (2 * Math.PI) * (P.params.P1 - P.params.P2));
       else if (l.type === 'rack' && l.a === cur) vlin.set(other, wc * rpOf(P));
       else if (l.type === 'push' && l.a === cur) vlin.set(other, vlin.get(cur) ?? 0);
+      else if (l.type === 'drive') {
+        const R = driveStep(l.a === cur ? P : Q, l.a === cur ? Q : P);
+        omega.set(other, l.a === cur ? wc / R : wc * R);
+      }
       else continue;
       seen.add(other); queue.push(other);
     }
@@ -1548,7 +1674,8 @@ function refreshSpeeds() {
   for (const p of parts) {
     if (omega.has(p.id)) {
       const n = omega.get(p.id) * 60 / (2 * Math.PI);
-      t.innerHTML += `<tr><td>${TYPE_ICONS[p.type]} ${p.name}</td><td>${fmt(n,1)} dev/dk</td></tr>`;
+      const kmh = p.type === 'wheel' ? ` · ${fmt(Math.abs(omega.get(p.id)) * (p.params.D / 2) / 1000 * 3.6, 1)} km/h` : '';
+      t.innerHTML += `<tr><td>${TYPE_ICONS[p.type]} ${p.name}</td><td>${fmt(n,1)} dev/dk${kmh}</td></tr>`;
     } else if (vlin.has(p.id)) {
       t.innerHTML += `<tr><td>${TYPE_ICONS[p.type]} ${p.name}</td><td>${fmt(vlin.get(p.id),2)} mm/s</td></tr>`;
     }
@@ -1562,6 +1689,7 @@ function refreshSpeeds() {
   computeDose();
   computeForce();
   computeExtra();
+  computeDrive();
 }
 
 // Doz hassasiyeti: pompa zincirinden (vida net ilerleme + rezervuar kesiti + encoder) çözünürlük hesabı
@@ -1680,6 +1808,49 @@ function computeExtra() {
     }
   }
   out.innerHTML = rows.length ? rows.join('') : '<tr><td class="empty">Motor + vida/dişli ekleyince ek hesaplar çıkar.</td></tr>';
+}
+
+// 🚗 Aktarma organı analizi: toplam oran, teker devri, yol hızı, teker torku, çekiş kuvveti
+function computeDrive() {
+  const head = $('drvHead'), box = $('drvBox'), out = $('drvOut');
+  if (!head || !box || !out) return;
+  const gb = parts.find(p => p.type === 'gearbox');
+  const df = parts.find(p => p.type === 'differential');
+  const wheels = parts.filter(p => p.type === 'wheel');
+  // Araba varsa motor devir aralığını yükselt (gerçekçi motor devri), yoksa pompa aralığına dön
+  const rpmEl = $('rpm'), carMode = !!(gb || wheels.length), wantMax = carMode ? 6000 : 300;
+  if (rpmEl && +rpmEl.max !== wantMax) {
+    rpmEl.max = wantMax; rpmEl.step = carMode ? 25 : 5;
+    if (+rpmEl.value > wantMax) { rpmEl.value = wantMax; motor.rpm = wantMax; $('rpmTxt').textContent = wantMax; }
+  }
+  if (!gb && !df && !wheels.length) { head.style.display = 'none'; box.style.display = 'none'; return; }
+  head.style.display = ''; box.style.display = '';
+  const F = (x, d) => fmt(x, d), rows = [];
+  if (gb) {
+    const n = Math.max(Math.round(gb.params.gears) || 1, 1), g = clampN(Math.round(gb.params.gear) || 1, 1, n);
+    $('gearNow').textContent = `${g} / ${n}`;
+  } else $('gearNow').textContent = '—';
+  const gr = gb ? gearboxRatio(gb) : 1, fd = df ? Math.max(df.params.fd || 1, 0.01) : 1, tot = gr * fd;
+  if (gb) rows.push(`<tr><td>Vites oranı (aktif)</td><td>${F(gr, 2)} : 1</td></tr>`);
+  if (df) rows.push(`<tr><td>Nihai tahvil</td><td>${F(fd, 2)} : 1</td></tr>`);
+  rows.push(`<tr><td><b>Toplam oran</b></td><td><b>${F(tot, 2)} : 1</b></td></tr>`);
+  const { omega } = solveSpeeds();
+  const wheel = wheels.find(w => omega.has(w.id)) || wheels[0];
+  if (wheel && omega.has(wheel.id)) {
+    const R = wheel.params.D / 2 / 1000, v = Math.abs(omega.get(wheel.id)) * R;   // m, m/s
+    const nW = Math.abs(omega.get(wheel.id)) * 60 / (2 * Math.PI);
+    rows.push(`<tr><td>Teker devri</td><td>${F(nW, 1)} dev/dk</td></tr>`);
+    rows.push(`<tr><td><b>Yol hızı</b></td><td><b>${F(v * 3.6, 1)} km/h</b> (${F(v, 2)} m/s)</td></tr>`);
+    const Tm = Math.max(+$('fTorq').value || 0, 0) / 1000;   // N·m (motor çıkışı)
+    if (Tm > 0) {
+      const eta = 0.92, Tw = Tm * tot * eta;
+      rows.push(`<tr><td>Teker torku</td><td>${F(Tw, 1)} N·m (η=0.92)</td></tr>`);
+      if (R > 0) rows.push(`<tr><td>Çekiş kuvveti</td><td>${F(Tw / R, 1)} N ≈ ${F(Tw / R / 9.81, 1)} kgf</td></tr>`);
+    }
+  } else if (wheel) {
+    rows.push('<tr><td class="empty">Motoru vitese/mile bağla ve "▶ Çalıştır" — hız/tork çıksın.</td></tr>');
+  }
+  out.innerHTML = rows.join('');
 }
 
 /* ================= STL dışa aktarım (CAD / 3B baskı, mm) ================= */
@@ -1864,7 +2035,7 @@ function applyState(d) {
   explodeBase = null;
   if ($('explode')) $('explode').value = 0, $('explodeTxt').textContent = 0;
   clearScene();
-  Object.assign(counters, { gear: 0, screw: 0, nut: 0, rack: 0, diffscrew: 0, piston: 0, hazne: 0, mil: 0, kasnak: 0, rulman: 0, kaplin: 0, kam: 0, sprocket: 0, yay: 0, kama: 0, pul: 0, custom: 0 }, d.counters || {});
+  Object.assign(counters, { gear: 0, screw: 0, nut: 0, rack: 0, diffscrew: 0, piston: 0, hazne: 0, mil: 0, kasnak: 0, rulman: 0, kaplin: 0, kam: 0, sprocket: 0, yay: 0, kama: 0, pul: 0, wheel: 0, gearbox: 0, differential: 0, custom: 0 }, d.counters || {});
   for (const rec of d.parts || [])
     createPart({ ...rec, pos: new THREE.Vector3(...rec.pos) });
   nextId = d.nextId || (Math.max(0, ...parts.map(p => p.id)) + 1);
@@ -1997,6 +2168,12 @@ $('addKama').onclick = () => addSimplePart('kama', { L: 20, w: 5, h: 5 },
   p => `✔ ${p.name} eklendi — mil-göbek kaması.`);
 $('addPul').onclick = () => addSimplePart('pul', { D: 18, d: 8, b: 2 },
   p => `✔ ${p.name} eklendi — pul (washer).`);
+$('addWheel').onclick = () => addSimplePart('wheel', { D: 600, w: 180, rim: 340 },
+  p => `✔ ${p.name} eklendi (Ø600) — diferansiyele "⚙→ Aktar" ile bağla, döner ve yol hızı çıkar.`);
+$('addGearbox').onclick = () => addSimplePart('gearbox', { gears: 5, gear: 1, ratio1: 3.5, ratioTop: 0.85, D: 90, L: 150 },
+  p => `✔ ${p.name} eklendi (5 vites) — motoru buna bağla, çıkışını diferansiyele "⚙→ Aktar".`);
+$('addDifferential').onclick = () => addSimplePart('differential', { fd: 4.1, D: 180, track: 1000 },
+  p => `✔ ${p.name} eklendi (nihai tahvil 4.1) — girişini vitese, iki çıkışını tekere "⚙→ Aktar".`);
 
 $('btnDel').onclick = () => { if (sel.length) { pushUndo(); deletePart(sel[0]); } };
 $('btnMotor').onclick = () => {
@@ -2052,6 +2229,10 @@ $('mateCyl').onclick = () => {
   if (!(A.type === 'piston' && B.type === 'hazne'))
     return statusMsg('⚠ Bir <b>piston</b> ve bir <b>hazne</b> seç.', 'bad');
   doCylMate(A, B);
+};
+$('mateDrive').onclick = () => {
+  const s = need2(); if (!s) return;
+  doDriveMate(s.A, s.B);   // A (ilk seçilen) = sürücü → B = tahrik edilen
 };
 
 $('mCoin').onclick = () => doStdMate('coincident');
@@ -2119,6 +2300,18 @@ $('btnSave').onclick = () => {
 for (const id of ['dEnc', 'dGbox', 'dUnit']) $(id).addEventListener('input', computeDose);
 for (const id of ['fTorq', 'fEta']) $(id).addEventListener('input', computeForce);
 for (const id of ['fMu', 'fTorq']) $(id).addEventListener('input', computeExtra);
+// Vites değiştir (aktarma organı)
+function shiftGear(delta) {
+  const gb = parts.find(p => p.type === 'gearbox');
+  if (!gb) return statusMsg('⚠ Önce bir vites kutusu ekle.', 'warn');
+  const n = Math.max(Math.round(gb.params.gears) || 1, 1);
+  const g = clampN((Math.round(gb.params.gear) || 1) + delta, 1, n);
+  gb.params.gear = g;
+  refreshSpeeds(); refreshSelBox(); save();
+  statusMsg(`🔀 ${gb.name}: ${g}. vitese geçildi (oran ${fmt(gearboxRatio(gb), 2)}:1).`, 'info');
+}
+$('gearUp').onclick = () => shiftGear(1);
+$('gearDown').onclick = () => shiftGear(-1);
 
 // STL dışa aktarım: tek parça seçiliyse onu, değilse tüm montajı
 $('btnSTL').onclick = () => {
@@ -2187,6 +2380,7 @@ function buildReport() {
     ['⚙ TORK & KUVVET', 'forceOut'],
     ['📊 EK HESAPLAR', 'extraOut'],
   ];
+  if ($('drvBox') && $('drvBox').style.display !== 'none') sections.push(['🚗 AKTARMA ORGANI', 'drvOut']);
   for (const [title, id] of sections) {
     L.push(`----- ${title} -----`);
     const lines = tableToLines(id);
@@ -2467,12 +2661,25 @@ const TEMPLATES = [
       s.obj.position.set(0, 90, 0); n.obj.position.set(0, 90, 70);
       doScrewMate(s, n); motor.partId = s.id;
   } },
+  { ad: '🚗 Araba Aktarma Organı', ac: 'Motor → 5 vitesli kutu → diferansiyel → 2 teker. Vitesi değiştir, yol hızı & çekiş değişsin.', rpm: 2000, kur: () => {
+      resetAssembly();
+      const gb = addPart('gearbox', { gears: 5, gear: 1, ratio1: 3.5, ratioTop: 0.85, D: 90, L: 150 });
+      const df = addPart('differential', { fd: 4.1, D: 180, track: 1000 });
+      const w1 = addPart('wheel', { D: 600, w: 180, rim: 340 });
+      const w2 = addPart('wheel', { D: 600, w: 180, rim: 340 });
+      gb.obj.position.set(-350, 250, 0);
+      gb.obj.rotation.y = Math.PI / 2;                 // aktarma eksenini yatay (X) yay → yan yana görünüm
+      doDriveMate(gb, df); doDriveMate(df, w1); doDriveMate(df, w2);
+      motor.partId = gb.id;
+  } },
 ];
 
 function loadTemplate(t) {
   pushUndo();
   t.kur();
-  motor.rpm = 60; $('rpm').value = 60; $('rpmTxt').textContent = 60;
+  const r = t.rpm || 60;
+  if (r > +$('rpm').max) { $('rpm').max = 6000; $('rpm').step = 25; }   // araba: yüksek devir aralığı
+  motor.rpm = r; $('rpm').value = r; $('rpmTxt').textContent = r;
   $('btnDir').textContent = motor.dir > 0 ? 'Yön ↺' : 'Yön ↻';
   running = false; $('btnRun').textContent = '▶ Çalıştır'; $('btnRun').classList.add('primary');
   sel = []; refreshSel(); refreshAll(); save(); fitView();
