@@ -176,15 +176,23 @@
   <h1>Parça <span>Tasarımı</span></h1>
   <div class="sub">Düzlem seç → profil çiz → katıya çevir → montaja ekle</div>
 
-  <h2>Düzlem</h2>
-  <div class="btnrow">
-    <button class="planebtn active" id="plFront" title="Öne bakan parçalar: dişli, plaka">▦ Ön</button>
-    <button class="planebtn" id="plTop" title="Yatay parçalar: üstten bakış">▦ Üst</button>
-    <button class="planebtn" id="plRight" title="Dikey parçalar: yandan bakış">▦ Sağ</button>
+  <div id="skChoose">
+    <div class="sub" style="line-height:1.7;background:#0d1117;border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+      <b style="color:var(--accent)">Bir düzlem seç.</b> Ortadaki üç düzlemden birinin üstüne
+      gel → <b style="color:var(--warn)">turuncu</b> olunca tıkla.<br><br>
+      • <b style="color:#4da3ff">Ön</b> — öne bakan parçalar (dişli, plaka)<br>
+      • <b style="color:#3fb950">Üst</b> — yatay parçalar (üstten bakış)<br>
+      • <b style="color:#a371f7">Sağ</b> — dikey / yandan parçalar
+    </div>
   </div>
-  <div class="sub" style="margin-top:4px">Oluşturduğun katı bu düzleme göre yönlenir.</div>
 
-  <h2>Çizim</h2>
+  <div id="skWork" style="display:none">
+  <div id="planeBar" class="sub" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:6px 10px;background:#0d1117;border:1px solid var(--border);border-radius:8px">
+    <span>◳ Düzlem: <b id="planeNow" style="color:var(--accent)">Ön</b></span>
+    <button id="planeChange" style="margin-left:auto;font-size:11px;padding:2px 8px">↩ değiştir</button>
+  </div>
+
+  <h2>Çizim Araçları</h2>
   <div class="btnrow" style="margin-bottom:6px">
     <button class="toolbtn" id="tSel">✥ Seç / Ölçü Düzenle</button>
   </div>
@@ -226,6 +234,7 @@
   <h2>Montaja Ekle</h2>
   <div class="row"><label>Parça adı</label><input type="text" id="dName" placeholder="Pompa Gövdesi" style="width:150px;background:#0d1117;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:3px 6px;font-size:12.5px"></div>
   <div id="dStatus" class="sub" style="margin-top:6px">Önce bir profil çiz.</div>
+  </div><!-- /skWork -->
 </div>
 
 <div id="panel">
@@ -2747,16 +2756,16 @@ function updateSketchPreview() {
 }
 function renderPreviewInset() {
   if (!designMode || !previewIsOn() || !previewMesh) return;
-  const dpr = renderer.getPixelRatio(), W = renderer.domElement.width, H = renderer.domElement.height;
-  const pw = PIP.w * dpr, ph = PIP.h * dpr, px = W - pw - PIP.m * dpr, py = PIP.m * dpr;  // WebGL: y aşağıdan → sağ-alt
+  // setViewport/setScissor CSS pikseli alır (pixelRatio ile üç.js kendisi çarpar!)
+  const px = innerWidth - PIP.w - PIP.m, py = PIP.m;   // WebGL: y aşağıdan → sağ-alt köşe
   const c = previewMesh.geometry.boundingSphere.center.clone().add(previewMesh.position);
   const rad = Math.max(previewMesh.geometry.boundingSphere.radius, 6);
   previewCam.position.copy(c).add(new THREE.Vector3(0.75, 0.6, 1).normalize().multiplyScalar(rad * 3.3));
   previewCam.lookAt(c); previewCam.updateProjectionMatrix();
   renderer.setScissorTest(true);
-  renderer.setViewport(px, py, pw, ph); renderer.setScissor(px, py, pw, ph);
+  renderer.setViewport(px, py, PIP.w, PIP.h); renderer.setScissor(px, py, PIP.w, PIP.h);
   renderer.render(scene, previewCam);
-  renderer.setScissorTest(false); renderer.setViewport(0, 0, W, H);
+  renderer.setScissorTest(false); renderer.setViewport(0, 0, innerWidth, innerHeight);
 }
 function skSnapshot() { skUndoStack.push(JSON.stringify(skShapes)); if (skUndoStack.length > 80) skUndoStack.shift(); }
 function skUndoDo() {
@@ -2824,6 +2833,7 @@ function skPath(s) {
 }
 
 function skDraw() {
+  if (skChoosing) { drawPlaneChooser(); return; }
   const w = sk.width, h = sk.height;
   skx.fillStyle = '#0d1117'; skx.fillRect(0, 0, w, h);
   const cx = skCX(), cy = skCY();
@@ -3018,8 +3028,104 @@ function setPlane(pl) {
   if (pl === skPlane) return;
   planeAnim = { to: pl, t0: performance.now(), dur: 340 };
   skPlane = pl; setPlaneUI();
-  skStatus(`Düzlem: ${{ front: 'Ön', top: 'Üst', right: 'Sağ' }[pl]} — çizdiğin katı bu düzleme göre yönlenir.`);
+  skStatus(`Düzlem: ${PLANE_TR[pl]} — çizdiğin katı bu düzleme göre yönlenir.`);
   tickPlaneAnim();
+}
+
+/* ===== SolidWorks tarzı 3B düzlem seçim ekranı ===== */
+const PLANE_TR = { front: 'Ön', top: 'Üst', right: 'Sağ' };
+const PLANE_COL = { front: '77,163,255', top: '63,185,80', right: '163,113,247' };
+let skChoosing = false, skPlaneHover = null, skChooseMouse = null;
+const planeHitQuads = {};
+
+function ptInPoly(px, py, poly) {                 // ışın atma (ray-casting) nokta-poligon testi
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+function planeAt(px, py) {                          // imlecin altındaki en üstteki düzlem
+  for (const k of ['front', 'right', 'top']) if (planeHitQuads[k] && ptInPoly(px, py, planeHitQuads[k])) return k;
+  return null;
+}
+
+function drawPlaneChooser() {
+  const w = sk.width, h = sk.height;
+  const g = skx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, '#0e141c'); g.addColorStop(1, '#0a0e14');
+  skx.fillStyle = g; skx.fillRect(0, 0, w, h);
+  // başlık
+  skx.textAlign = 'center';
+  skx.fillStyle = '#e6edf3'; skx.font = '600 21px Segoe UI';
+  skx.fillText('Çizim yapmak için bir düzlem seç', w / 2, 52);
+  skx.fillStyle = '#8b949e'; skx.font = '13px Segoe UI';
+  skx.fillText('Bir düzlemin üstüne gel → turuncu olunca tıkla', w / 2, 78);
+  skx.textAlign = 'left';
+
+  const ox = w / 2 + 30, oy = h / 2 + 24, S = Math.min(w, h) / 4.6;
+  const iso = (x, y, z) => [ox + (x - z) * S * 0.86, oy + (x + z) * S * 0.5 - y * S];
+  const defs = {
+    top:   { pts: [[-1, 0, -1], [1, 0, -1], [1, 0, 1], [-1, 0, 1]], lbl: iso(0.92, 0, -0.2) },
+    right: { pts: [[0, -1, -1], [0, 1, -1], [0, 1, 1], [0, -1, 1]], lbl: iso(0, 1.05, -0.35) },
+    front: { pts: [[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0]], lbl: iso(0.4, 1.08, 0) },
+  };
+  const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  // düzlemler (arkadan öne: üst → sağ → ön)
+  for (const key of ['top', 'right', 'front']) {
+    const scr = defs[key].pts.map(p => iso(...p));
+    planeHitQuads[key] = scr;
+    const hov = skPlaneHover === key, col = PLANE_COL[key];
+    skx.beginPath(); scr.forEach((p, i) => i ? skx.lineTo(p[0], p[1]) : skx.moveTo(p[0], p[1])); skx.closePath();
+    skx.fillStyle = hov ? 'rgba(255,154,60,.22)' : `rgba(${col},.12)`; skx.fill();
+    // iç ızgara (kenar orta noktalarından haç)
+    const m0 = mid(scr[0], scr[1]), m1 = mid(scr[1], scr[2]), m2 = mid(scr[2], scr[3]), m3 = mid(scr[3], scr[0]);
+    skx.strokeStyle = hov ? 'rgba(255,154,60,.35)' : `rgba(${col},.22)`; skx.lineWidth = 1; skx.setLineDash([5, 4]);
+    skx.beginPath(); skx.moveTo(...m0); skx.lineTo(...m2); skx.moveTo(...m1); skx.lineTo(...m3); skx.stroke();
+    skx.setLineDash([]);
+    // kenar
+    skx.beginPath(); scr.forEach((p, i) => i ? skx.lineTo(p[0], p[1]) : skx.moveTo(p[0], p[1])); skx.closePath();
+    skx.strokeStyle = hov ? '#ff9a3c' : `rgba(${col},.85)`; skx.lineWidth = hov ? 3 : 1.6; skx.stroke();
+  }
+  // etiketler (hepsi düzlemlerin üstüne)
+  skx.textAlign = 'center';
+  for (const key of ['top', 'right', 'front']) {
+    const hov = skPlaneHover === key;
+    skx.fillStyle = hov ? '#ff9a3c' : `rgb(${PLANE_COL[key]})`;
+    skx.font = `bold ${hov ? 15 : 13}px Segoe UI`;
+    skx.fillText(PLANE_TR[key] + ' Düzlem', defs[key].lbl[0], defs[key].lbl[1]);
+  }
+  skx.textAlign = 'left';
+  // imleç yanında ipucu balonu
+  if (skPlaneHover && skChooseMouse) {
+    const [mx, my] = skChooseMouse, txt = PLANE_TR[skPlaneHover] + ' Düzlem';
+    skx.font = 'bold 12px Segoe UI';
+    const tw = skx.measureText(txt).width + 18;
+    skx.fillStyle = 'rgba(22,27,34,.96)'; skx.strokeStyle = '#ff9a3c'; skx.lineWidth = 1;
+    skx.beginPath(); skx.roundRect(mx + 16, my + 14, tw, 24, 6); skx.fill(); skx.stroke();
+    skx.fillStyle = '#ff9a3c'; skx.fillText(txt, mx + 25, my + 30);
+  }
+}
+
+function updateDesignPanel() {
+  const c = !!skChoosing, sc = $('skChoose'), sw = $('skWork'), pn = $('planeNow');
+  if (sc) sc.style.display = c ? '' : 'none';
+  if (sw) sw.style.display = c ? 'none' : '';
+  if (pn && !c) pn.textContent = PLANE_TR[skPlane] || 'Ön';
+}
+function openPlaneChooser(clearSketch) {
+  if (clearSketch) { if (skShapes.length) skSnapshot(); skShapes = []; skPts = []; skSel = null; skHover = null; }
+  skChoosing = true; skPlaneHover = null; skTool = null;
+  sk.style.cursor = 'default';
+  updateDesignPanel(); showDimBox(); skDraw();
+}
+function pickPlane(key) {
+  skChoosing = false; skPlane = key; setPlaneUI();
+  sk.style.cursor = 'crosshair';
+  updateDesignPanel();
+  $('tLine').click();                                 // varsayılan araç: çizgi
+  skStatus(`✔ <b>${PLANE_TR[key]} Düzlem</b> seçildi — noktalara tıklayarak profili çiz.`);
 }
 
 function skClick(p) {
@@ -3147,6 +3253,7 @@ function showDimBox() {
 sk.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   hideSkMenu();
+  if (skChoosing) { const k = planeAt(e.clientX, e.clientY); if (k) pickPlane(k); return; }
   // düzlem göstergesine tıklama → sıradaki düzleme yumuşak geçiş
   if (Math.hypot(e.clientX - skPlaneWidget.x, e.clientY - skPlaneWidget.y) < skPlaneWidget.r) {
     const order = ['front', 'top', 'right'];
@@ -3157,12 +3264,20 @@ sk.addEventListener('pointerdown', e => {
   skClick(resolvePoint(e.clientX, e.clientY));
 });
 sk.addEventListener('pointermove', e => {
+  if (skChoosing) {
+    skChooseMouse = [e.clientX, e.clientY];
+    const k = planeAt(e.clientX, e.clientY);
+    if (k !== skPlaneHover) skPlaneHover = k;
+    sk.style.cursor = k ? 'pointer' : 'default';
+    skDraw(); return;
+  }
   if (skTool === 'sel') { skSnap = null; skMouse = toMm(e.clientX, e.clientY); skHover = skPickPx(e.clientX, e.clientY); skDraw(); return; }
   skMouse = resolvePoint(e.clientX, e.clientY);
   skDraw();
 });
 sk.addEventListener('wheel', e => {
   e.preventDefault();
+  if (skChoosing) return;
   pxmm = clampN(pxmm * (e.deltaY < 0 ? 1.15 : 1 / 1.15), 1, 12);
   skDraw();
 }, { passive: false });
@@ -3225,14 +3340,9 @@ for (const [id, tool, tip] of [
 $('tUndo').onclick = () => { if (skPts.length) skPts.pop(); else skShapes.pop(); skSel = null; skHover = null; showDimBox(); skDraw(); };
 $('tClear').onclick = () => { if (skShapes.length) skSnapshot(); skShapes = []; skPts = []; skSel = null; skHover = null; skCutMode = false; setCutUI(); showDimBox(); skDraw(); skStatus('Çizim temizlendi. (Ctrl+Z ile geri al)'); };
 
-// Düzlem seçimi (Ön / Üst / Sağ)
-function setPlaneUI() {
-  document.querySelectorAll('.planebtn').forEach(b => b.classList.remove('active'));
-  $(skPlane === 'top' ? 'plTop' : skPlane === 'right' ? 'plRight' : 'plFront').classList.add('active');
-}
-for (const [id, pl] of [['plFront', 'front'], ['plTop', 'top'], ['plRight', 'right']]) {
-  $(id).onclick = () => setPlane(pl);
-}
+// Düzlem göstergesi (panel üstü "Düzlem: Ön") + "değiştir" → seçim ekranına dön
+function setPlaneUI() { const pn = $('planeNow'); if (pn) pn.textContent = PLANE_TR[skPlane] || 'Ön'; }
+$('planeChange').onclick = () => openPlaneChooser(false);
 // Kesme modu (katıdan çıkar)
 function setCutUI() {
   $('tCut').classList.toggle('active', skCutMode);
@@ -3302,6 +3412,7 @@ $('btnEditSketch').onclick = () => {
   skCutMode = false; setCutUI();
   $('dDepth').value = p.params.depth || 10;
   $('dName').value = p.name;
+  skChoosing = false;                          // düzlem belli → seçim ekranını atla
   setTab('design');
   $('tSel').click();
   skStatus(`✏️ <b>${p.name}</b> düzenleniyor — değiştir, sonra Ekstrüzyon/Döndür ile <b>güncelle</b>.`);
@@ -3315,6 +3426,7 @@ $('btnFaceSketch').onclick = () => {
   skPlane = 'front'; setPlaneUI();          // üst/ön yüzey = +Z
   skCutMode = false; setCutUI();
   $('dName').value = ''; $('dDepth').value = 8;
+  skChoosing = false;                          // yüzeye çizim → düzlem seçim ekranını atla
   setTab('design');
   $('tRect').click();
   skStatus(`🔲 <b>${par ? par.name : ''}</b> yüzeyine çizim — profili çiz, <b>Ekstrüzyon</b> ile kabartma ekle. Gri kesikli hat parçanın sınırıdır.`);
@@ -3335,17 +3447,16 @@ function setTab(t) {
   $('panel').style.display = d ? 'none' : '';
   $('designPanel').style.display = d ? '' : 'none';
   sk.style.display = d ? 'block' : 'none';   // CSS'teki display:none kuralını inline 'block' ezer
-  if (d && !skTool) $('tRect').click();       // boş araçla başlama — ölü tıklama olmasın
-  if (!d) { editingId = null; bossParentId = null; clearPreview(); }   // montaja dönünce düzenleme/kabartma + önizleme biter
+  if (!d) { editingId = null; bossParentId = null; clearPreview(); skChoosing = false; }   // montaja dönünce düzenleme/kabartma/seçim + önizleme biter
   if (d) { guideWasVisible = $('guide').style.display !== 'none'; $('guide').style.display = 'none'; }
   else if (guideWasVisible) $('guide').style.display = '';
   $('hint').innerHTML = d
     ? '✏️ Araç seç → tıklayarak çiz • İlk noktaya tıkla: kapat • Esc: iptal • Ctrl+Z: geri • Tekerlek: yakınlaştır'
     : '🖱 Tıkla: seç • 2. parçaya tıkla: çift seçim • 🧲 Sürükle-bırak: otomatik kavraşma • G/R/F/Del/Boşluk • Ctrl+Z: geri al';
-  if (d) skResize();
+  if (d) { updateDesignPanel(); skResize(); }
 }
 $('tabAsm').onclick = () => setTab('asm');
-$('tabDesign').onclick = () => setTab('design');
+$('tabDesign').onclick = () => { setTab('design'); openPlaneChooser(true); };  // yeni parça → düzlem seçim ekranı
 
 /* ================= Başlat ================= */
 if (load()) {
