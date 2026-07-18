@@ -251,7 +251,7 @@
   <label class="chk"><input type="checkbox" id="previewRev"> Önizlemeyi <b>döndürme</b> olarak göster</label>
 
   <h2>Montaja Ekle</h2>
-  <div class="row"><label>Parça adı</label><input type="text" id="dName" placeholder="Pompa Gövdesi" style="width:150px;background:#0d1117;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:3px 6px;font-size:12.5px"></div>
+  <div class="row"><label>Parça adı</label><input type="text" id="dName" placeholder="Flanş Gövdesi" style="width:150px;background:#0d1117;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:3px 6px;font-size:12.5px"></div>
   <div id="dStatus" class="sub" style="margin-top:6px">Önce bir profil çiz.</div>
   </div><!-- /skWork -->
 </div>
@@ -307,7 +307,7 @@
   </div>
   <div class="btnrow" style="margin-top:6px">
     <button id="addPiston" title="Somun/kramayer tarafından itilen piston">⚪ Piston</button>
-    <button id="addHazne" title="Şeffaf silindir hazne — sıvı seviyesi görünür">💉 Hazne</button>
+    <button id="addHazne" title="Şeffaf silindir hazne — sıvı seviyesi görünür">🛢 Hazne</button>
   </div>
   <div class="btnrow" style="margin-top:6px">
     <button id="addMil" title="Silindirik mil — üzerine dişli/kasnak takılır, döner">┃ Mil</button>
@@ -331,6 +331,7 @@
   </div>
   <div class="btnrow" style="margin-top:6px">
     <button id="addDifferential" title="Diferansiyel — nihai tahvil + gücü iki tekere böler">⊗ Diferansiyel</button>
+    <button id="addEngine" title="İçten yanmalı motor bloğu — krank, biyel ve pistonlar canlı çalışır">🏎 Motor Blok</button>
   </div>
   </div><!-- /subParts -->
 
@@ -347,7 +348,7 @@
   </div>
   <div class="btnrow" style="margin-top:6px">
     <button id="matePush" title="Somun/kramayer pistonu iter">⬡⚪ Pistonu İt</button>
-    <button id="mateCyl" title="Pistonu hazneye yerleştir">⚪💉 Hazneye Tak</button>
+    <button id="mateCyl" title="Pistonu hazneye yerleştir">⚪🛢 Hazneye Tak</button>
   </div>
   <div class="btnrow" style="margin-top:6px">
     <button id="mateDrive" title="Aktarma: seçili A→B (motor→vites→diferansiyel→teker). Sıra: sürücüyü önce seç.">⚙→ Aktar (Drivetrain)</button>
@@ -389,19 +390,13 @@
   </div>
   <table class="res" id="speeds"></table>
   <div id="pump" style="display:none">
-    <h2>💉 Pompa Analizi</h2>
+    <h2>🛢 Silindir Analizi</h2>
     <table class="res">
       <tr><td>Debi (anlık)</td><td id="pQ">–</td></tr>
       <tr><td>Verilen hacim</td><td id="pGiven">–</td></tr>
       <tr><td>Kalan hacim</td><td id="pLeft">–</td></tr>
     </table>
   </div>
-
-  <h2>🎯 Doz Hassasiyeti</h2>
-  <div class="row"><label>Encoder sayım/devir</label><input type="number" id="dEnc" value="16384" step="1"></div>
-  <div class="row"><label>Motor redüktör oranı</label><input type="number" id="dGbox" value="1000" step="1"><span class="unit">:1</span></div>
-  <div class="row"><label>1 Ünite =</label><input type="number" id="dUnit" value="10" step="1"><span class="unit">µL</span></div>
-  <table class="res" id="doseOut"></table>
 
   <h2>⚙ Tork & Kuvvet</h2>
   <div class="row"><label>Motor çıkış torku</label><input type="number" id="fTorq" value="300" step="10"><span class="unit">mNm</span></div>
@@ -432,6 +427,7 @@
     <button id="btnSave" title="Montajı .json dosyası olarak indir">💾 Kaydet</button>
     <button id="btnOpen" title="Kaydedilmiş .json montajını aç">📂 Aç</button>
     <button id="btnRec" title="Simülasyonu video (.webm) olarak kaydet">🎥 Video</button>
+    <button id="btnShare" title="Montajı link olarak panoya kopyala — linki açan aynı montajı görür">🔗 Paylaş</button>
   </div>
   <div class="btnrow" style="margin-top:6px">
     <button id="btnSTL" title="Seçili parçayı veya tüm montajı STL olarak indir (CAD/3B baskı)">📐 CAD'e Aktar (STL)</button>
@@ -448,6 +444,7 @@
   <div class="btnrow" style="margin-top:6px">
     <button id="btnGuide">❓ Rehber</button>
     <button id="btnUndo">↩ Geri Al</button>
+    <button id="btnRedo" title="Ctrl+Y">↪ İleri Al</button>
     <button id="btnReset" class="danger">✕ Sıfırla</button>
   </div>
 
@@ -476,7 +473,7 @@
   <div id="gdone">🎉 Harika! İlk mekanizman çalışıyor. Şimdi vida, somun ve kramayerle zinciri uzatabilirsin.</div>
 </div>
 
-<div id="hint">🖱 Tıkla: seç • 2. parçaya tıkla: çift seçim • 🧲 Sürükle-bırak: otomatik kavraşma • G/R/F/Del/Boşluk • Ctrl+Z: geri al</div>
+<div id="hint">🖱 Tıkla: seç • 2. parçaya tıkla: çift seçim • 🧲 Sürükle-bırak: otomatik kavraşma • G/R/F/Del/Boşluk • Ctrl+Z / Ctrl+Y: geri / ileri al</div>
 
 <script type="importmap">
 { "imports": {
@@ -1004,10 +1001,83 @@ function buildDifferential(p) {
   return { content: g, r: R };
 }
 
+// 🏎 Motor blok: krank mili (spin ile döner) + karşı-dönen statik grup (blok, silindir, piston, biyel)
+function buildEngine(p) {
+  const g = new THREE.Group();
+  const nc = clampN(Math.round(p.nc) || 4, 1, 8);
+  const bore = Math.max(p.bore, 10), stroke = Math.max(p.stroke, 10);
+  const r = stroke / 2, rodL = stroke * 1.8, sp = bore * 1.35, L = sp * nc;
+  const jr = bore * 0.14, ph = bore * 0.62;
+  const phases = [];
+  for (let i = 0; i < nc; i++) phases.push(nc === 4 ? ((i === 0 || i === 3) ? 0 : Math.PI) : i * 2 * Math.PI / nc);
+  const steel = new THREE.MeshStandardMaterial({ color: 0xb8c4d2, metalness: 0.85, roughness: 0.25 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x8a97a8, metalness: 0.7, roughness: 0.4 });
+  const alu = new THREE.MeshStandardMaterial({ color: 0xff8a4a, emissive: 0x66280a, metalness: 0.5, roughness: 0.35 });   // piston: turuncu, uzaktan seçilir
+  const rodMat = new THREE.MeshStandardMaterial({ color: 0x22d3ee, emissive: 0x06333d, metalness: 0.6, roughness: 0.3 }); // biyel: camgöbeği
+  const pinMat = new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0x4d3a10, metalness: 0.7, roughness: 0.3 }); // krank pimi: sarı
+  // krank: ana muylu + yanaklar + krank pimleri (θ ile döner)
+  const crank = new THREE.Group();
+  const main = new THREE.Mesh(new THREE.CylinderGeometry(jr, jr, L + bore * 0.8, 20), steel);
+  main.rotation.x = Math.PI / 2; main.position.z = L / 2; crank.add(main);
+  const pins = [];
+  for (let i = 0; i < nc; i++) {
+    const zc = sp * (i + 0.5), a = Math.PI / 2 + phases[i];
+    const px = r * Math.cos(a), py = r * Math.sin(a);
+    for (const dz of [-bore * 0.26, bore * 0.26]) {
+      const web = new THREE.Mesh(new THREE.BoxGeometry(jr * 2.4, r + jr * 2.6, bore * 0.13), dark);
+      web.position.set(px / 2, py / 2, zc + dz);
+      web.rotation.z = Math.atan2(py, px) - Math.PI / 2;
+      crank.add(web);
+    }
+    const pin = new THREE.Mesh(new THREE.CylinderGeometry(jr * 0.9, jr * 0.9, bore * 0.4, 16), pinMat);
+    pin.rotation.x = Math.PI / 2; pin.position.set(px, py, zc);
+    crank.add(pin);
+    pins.push({ zc, phase: phases[i] });
+  }
+  g.add(crank);
+  // statik grup: her karede -θ ile karşı döner → dünyada sabit kalır
+  const stat = new THREE.Group(); g.add(stat);
+  const topY = rodL + r + ph + bore * 0.3, botY = -(r + jr * 3);
+  const blockMat = new THREE.MeshStandardMaterial({ color: 0x74839a, transparent: true, opacity: 0.08, metalness: 0.4, roughness: 0.35, depthWrite: false });
+  const block = new THREE.Mesh(new THREE.BoxGeometry(bore * 1.6, topY - botY, L + bore * 0.6), blockMat);
+  block.position.set(0, (topY + botY) / 2, L / 2);
+  block.userData.noShadow = true; block.userData.isFluid = true;   // STL dışı, gölgesiz kabuk
+  stat.add(block);
+  const linerMat = new THREE.MeshStandardMaterial({ color: 0xbfd6e4, transparent: true, opacity: 0.12, side: THREE.DoubleSide, metalness: 0.1, roughness: 0.2, depthWrite: false });
+  const pistons = [], rods = [];
+  for (const pn of pins) {
+    const lb = rodL - r - 2, lt = rodL + r + ph + 2;
+    const liner = new THREE.Mesh(new THREE.CylinderGeometry(bore / 2 + 1.5, bore / 2 + 1.5, lt - lb, 28, 1, true), linerMat);
+    liner.position.set(0, (lb + lt) / 2, pn.zc);
+    liner.userData.noShadow = true; liner.userData.isFluid = true;
+    stat.add(liner);
+    const piston = new THREE.Mesh(new THREE.CylinderGeometry(bore / 2 - 0.8, bore / 2 - 0.8, ph, 28), alu);
+    piston.position.set(0, rodL + ph / 2, pn.zc); stat.add(piston);
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(jr * 0.85, jr * 0.85, rodL, 12), rodMat);
+    rod.position.set(0, rodL / 2, pn.zc); stat.add(rod);
+    pistons.push(piston); rods.push(rod);
+  }
+  return { content: g, r: Math.max(topY, L / 2) * 1.02, eng: { stat, pistons, rods, pins, r, rodL, ph } };
+}
+// piston konumu: y = r·cos(θ+φ) + √(l² − r²sin²(θ+φ))  (krank-biyel kinematiği)
+function animEngine(p) {
+  const e = p.eng; if (!e) return;
+  e.stat.rotation.z = -p.theta;
+  for (let i = 0; i < e.pins.length; i++) {
+    const pn = e.pins[i], a = p.theta + pn.phase;
+    const px = -e.r * Math.sin(a), py = e.r * Math.cos(a);
+    const yp = py + Math.sqrt(Math.max(e.rodL * e.rodL - px * px, 1));
+    e.pistons[i].position.y = yp + e.ph / 2;
+    const rod = e.rods[i];
+    rod.position.set(px / 2, (py + yp) / 2, pn.zc);
+    rod.rotation.z = -Math.atan2(-px, yp - py);
+  }
+}
+
 /* ================= Parça yönetimi ================= */
 let parts = [], links = [], motor = { partId: null, rpm: 60, dir: 1 };
 let sel = [], running = false, nextId = 1;
-const counters = { gear: 0, screw: 0, nut: 0, rack: 0, diffscrew: 0, piston: 0, hazne: 0, mil: 0, kasnak: 0, rulman: 0, kaplin: 0, kam: 0, sprocket: 0, yay: 0, kama: 0, pul: 0, wheel: 0, gearbox: 0, differential: 0, custom: 0 };
+const counters = { gear: 0, screw: 0, nut: 0, rack: 0, diffscrew: 0, piston: 0, hazne: 0, mil: 0, kasnak: 0, rulman: 0, kaplin: 0, kam: 0, sprocket: 0, yay: 0, kama: 0, pul: 0, wheel: 0, gearbox: 0, differential: 0, engine: 0, custom: 0 };
 const GEAR_COLORS = [0x8fa3bf, 0xc9a86a, 0x9fbf8f, 0xbf8f9f, 0x8fbfba];
 
 const PARAM_DEFS = {
@@ -1031,10 +1101,11 @@ const PARAM_DEFS = {
   wheel:  [['D', 'Dış çap (lastik)', 'mm', 5], ['w', 'Genişlik', 'mm', 2], ['rim', 'Jant çapı', 'mm', 2]],
   gearbox: [['gears', 'Vites sayısı', '', 1], ['gear', 'Aktif vites', '', 1], ['ratio1', '1. vites oranı', ':1', 0.1], ['ratioTop', 'Son vites oranı', ':1', 0.1], ['D', 'Kutu çapı', 'mm', 2], ['L', 'Kutu boyu', 'mm', 2]],
   differential: [['fd', 'Nihai tahvil', ':1', 0.1], ['D', 'Taç dişli çapı', 'mm', 2], ['track', 'Aks açıklığı', 'mm', 5]],
+  engine: [['nc', 'Silindir sayısı', '', 1], ['bore', 'Silindir çapı (bore)', 'mm', 0.5], ['stroke', 'Strok', 'mm', 0.5]],
   custom: [['depth', 'Derinlik', 'mm', 1]],
 };
-const TYPE_NAMES = { gear: 'Dişli', rack: 'Kramayer', screw: 'Vida', nut: 'Somun', diffscrew: 'Dif. Vida', piston: 'Piston', hazne: 'Hazne', mil: 'Mil', kasnak: 'Kasnak', rulman: 'Rulman', kaplin: 'Kaplin', kam: 'Kam', sprocket: 'Zincir Dişlisi', yay: 'Yay', kama: 'Kama', pul: 'Pul', wheel: 'Teker', gearbox: 'Vites Kutusu', differential: 'Diferansiyel', custom: 'Özel Parça' };
-const TYPE_ICONS = { gear: '⚙', rack: '▬', screw: '🔩', nut: '⬡', diffscrew: '🌀', piston: '⚪', hazne: '💉', mil: '┃', kasnak: '⊙', rulman: '◎', kaplin: '╪', kam: '◑', sprocket: '✲', yay: '∿', kama: '▭', pul: '○', wheel: '🛞', gearbox: '🔀', differential: '⊗', custom: '🧩' };
+const TYPE_NAMES = { gear: 'Dişli', rack: 'Kramayer', screw: 'Vida', nut: 'Somun', diffscrew: 'Dif. Vida', piston: 'Piston', hazne: 'Hazne', mil: 'Mil', kasnak: 'Kasnak', rulman: 'Rulman', kaplin: 'Kaplin', kam: 'Kam', sprocket: 'Zincir Dişlisi', yay: 'Yay', kama: 'Kama', pul: 'Pul', wheel: 'Teker', gearbox: 'Vites Kutusu', differential: 'Diferansiyel', engine: 'Motor Blok', custom: 'Özel Parça' };
+const TYPE_ICONS = { gear: '⚙', rack: '▬', screw: '🔩', nut: '⬡', diffscrew: '🌀', piston: '⚪', hazne: '🛢', mil: '┃', kasnak: '⊙', rulman: '◎', kaplin: '╪', kam: '◑', sprocket: '✲', yay: '∿', kama: '▭', pul: '○', wheel: '🛞', gearbox: '🔀', differential: '⊗', engine: '🏎', custom: '🧩' };
 const rpOf = g => g.params.m * g.params.z / 2;
 
 function createPart(rec) {
@@ -1085,6 +1156,7 @@ function rebuildContent(part) {
               : part.type === 'wheel' ? buildWheel(part.params)
               : part.type === 'gearbox' ? buildGearbox(part.params)
               : part.type === 'differential' ? buildDifferential(part.params)
+              : part.type === 'engine' ? buildEngine(part.params)
               : part.type === 'custom' ? buildCustom(part.params)
               : buildNut(part.params);
   built.content.traverse(o => {
@@ -1094,6 +1166,7 @@ function rebuildContent(part) {
   part.spin.add(built.content);
   part.r = built.r;
   part.colBox = built.box || null;
+  part.eng = built.eng || null;
   part.spin.rotation.z = part.theta;
   applyPitchVisibility();
 }
@@ -1373,7 +1446,7 @@ function doCylMate(P, H) {  // piston hazneye girer; piston iticiye bağlıysa h
   addLink('cyl', P.id, H.id, { given: 0 });
   const A = Math.PI * (H.params.D / 2) ** 2;
   const seal = gap > 0.6 ? ` ⚠ Boşluk ${fmt(gap,2)} mm — sızdırmazlık için çapları yaklaştır.` : '';
-  statusMsg(`✔ ${P.name}, ${H.name} içine yerleşti — kesit ${fmt(A,1)} mm² → 1 mm itme = ${fmt(A,1)} µL.${seal}`, 'ok');
+  statusMsg(`✔ ${P.name}, ${H.name} içine yerleşti — kesit ${fmt(A,1)} mm² → 1 mm itme = ${fmt(A,1)} mm³ süpürme.${seal}`, 'ok');
   return true;
 }
 
@@ -1426,8 +1499,8 @@ function addLink(type, a, b, extra = {}) {
 
 /* ---- Standart ilişkiler (konumlama) ---- */
 const STD_NAMES = { coincident: 'Çakışık', parallel: 'Paralel', perp: 'Dik', tangent: 'Teğet', concentric: 'Eş merkezli', lock: 'Kilit', dist: 'Mesafe', angle: 'Açı' };
-const isRound = t => ['gear', 'screw', 'nut', 'diffscrew', 'piston', 'hazne', 'mil', 'kasnak', 'rulman', 'kaplin', 'kam', 'sprocket', 'yay', 'pul', 'wheel', 'gearbox', 'differential', 'custom'].includes(t);
-const isRot = t => ['gear', 'screw', 'diffscrew', 'mil', 'kasnak', 'kaplin', 'kam', 'sprocket', 'wheel', 'gearbox', 'differential', 'custom'].includes(t);
+const isRound = t => ['gear', 'screw', 'nut', 'diffscrew', 'piston', 'hazne', 'mil', 'kasnak', 'rulman', 'kaplin', 'kam', 'sprocket', 'yay', 'pul', 'wheel', 'gearbox', 'differential', 'engine', 'custom'].includes(t);
+const isRot = t => ['gear', 'screw', 'diffscrew', 'mil', 'kasnak', 'kaplin', 'kam', 'sprocket', 'wheel', 'gearbox', 'differential', 'engine', 'custom'].includes(t);
 
 function applyStdMate(type, A, B, val) {  // B taşınır/döner
   const dirZ = () => Z_AXIS.clone().applyQuaternion(A.obj.quaternion);
@@ -1593,6 +1666,10 @@ function partVols(p) {
     case 'kasnak': return [{ kind: 'cyl', r: q.D / 2, z0: -q.b / 2, z1: q.b / 2 }];
     case 'rulman': return [{ kind: 'cyl', r: q.D / 2, z0: -q.b / 2, z1: q.b / 2 }];
     case 'kaplin': return [{ kind: 'cyl', r: q.D / 2, z0: 0, z1: q.L }];
+    case 'engine': {
+      const nc = clampN(Math.round(q.nc) || 4, 1, 8), sp = q.bore * 1.35, L = sp * nc, rodL = q.stroke * 1.8;
+      return [{ kind: 'box', x0: -q.bore * 0.8, x1: q.bore * 0.8, y0: -(q.stroke / 2 + q.bore * 0.42), y1: rodL + q.stroke / 2 + q.bore * 0.92, z0: -q.bore * 0.3, z1: L + q.bore * 0.3 }];
+    }
     case 'kam': return [{ kind: 'cyl', r: q.R + Math.abs(q.e), z0: -q.b / 2, z1: q.b / 2 }];
     case 'sprocket': return [{ kind: 'cyl', r: sprocketRadii(q).ra, z0: -q.b / 2, z1: q.b / 2 }];
     case 'yay': return [{ kind: 'cyl', r: q.D / 2 + q.d / 2, z0: 0, z1: q.L }];
@@ -1726,49 +1803,9 @@ function refreshSpeeds() {
     const S = byId(l.a), w = omega.get(l.a);
     if (S && w) t.innerHTML += `<tr><td>🌀 ${S.name} (eksenel)</td><td>${fmt(w / (2 * Math.PI) * S.params.P1, 2)} mm/s</td></tr>`;
   }
-  computeDose();
   computeForce();
   computeExtra();
   computeDrive();
-}
-
-// Doz hassasiyeti: pompa zincirinden (vida net ilerleme + rezervuar kesiti + encoder) çözünürlük hesabı
-function computeDose() {
-  const out = $('doseOut'); if (!out) return;
-  const cyl = links.find(l => l.type === 'cyl');
-  const diff = links.find(l => l.type === 'diff');
-  const scr = links.find(l => l.type === 'screw');
-  const haz = cyl ? byId(cyl.b) : null;
-  let screwPart = null, net = 0;
-  if (diff) { screwPart = byId(diff.a); net = screwPart.params.P1 - screwPart.params.P2; }
-  else if (scr) { screwPart = byId(scr.a); net = screwPart.params.P; }
-  if (!haz || !screwPart || !(net > 0)) {
-    out.innerHTML = '<tr><td class="empty">Vida + somun + piston + hazne kur → doz çözünürlüğü otomatik hesaplanır.</td></tr>';
-    return;
-  }
-  const A = Math.PI * (haz.params.D / 2) ** 2;           // mm² = µL/mm
-  const enc = Math.max(+$('dEnc').value || 1, 1);
-  const uL = Math.max(+$('dUnit').value || 10, 1e-4);    // µL / Ünite
-  const gbox = Math.max(+$('dGbox').value || 1, 1);
-  const volPerRev = A * net;                              // µL / vida devri
-  const mmPerCount = net / enc, volPerCount = A * mmPerCount;
-  const screwRevPerUnit = uL / volPerRev;
-  // motor→vida dişli oranı (varsa) — solveSpeeds oransal
-  let gearRatio = 1;
-  if (motor.partId != null) {
-    const { omega } = solveSpeeds();
-    const wm = omega.get(motor.partId), ws = omega.get(screwPart.id);
-    if (wm && ws) gearRatio = Math.abs(wm / ws);          // motor-çıkış devri / vida devri
-  }
-  const motorRevPerUnit = screwRevPerUnit * gearRatio * gbox;
-  const F = (x, d) => fmt(x, d);
-  out.innerHTML =
-    `<tr><td>Rezervuar kesiti</td><td>${F(A, 1)} mm²</td></tr>` +
-    `<tr><td>Net ilerleme</td><td>${F(net, 2)} mm/dev</td></tr>` +
-    `<tr><td>1 vida devri</td><td>${F(volPerRev, 1)} µL = ${F(volPerRev / uL, 2)} Ü</td></tr>` +
-    `<tr><td>1 encoder adımı</td><td>${F(mmPerCount * 1000, 3)} µm = ${F(volPerCount, 4)} µL</td></tr>` +
-    `<tr><td><b>En küçük doz</b></td><td><b>${F(volPerCount / uL, 4)} Ü</b></td></tr>` +
-    `<tr><td>1 Ünite için</td><td>${F(uL / volPerCount, 0)} adım · ${F(motorRevPerUnit, 1)} motor devri</td></tr>`;
 }
 
 // Tork & kuvvet: motor torku → vida ekseni kuvveti → piston kuvveti → rezervuar basıncı
@@ -1803,7 +1840,7 @@ function computeForce() {
   if (haz) {
     const A = Math.PI * (haz.params.D / 2) ** 2;             // mm²
     const P = Fax / A;                                        // N/mm² = MPa
-    rows += `<tr><td>Rezervuar basıncı</td><td>${F(P, 3)} MPa = ${F(P * 10, 1)} bar</td></tr>`;
+    rows += `<tr><td>Silindir basıncı</td><td>${F(P, 3)} MPa = ${F(P * 10, 1)} bar</td></tr>`;
   }
   out.innerHTML = rows;
 }
@@ -1836,14 +1873,14 @@ function computeExtra() {
     const { omega } = solveSpeeds(), g = byId(gl.a), w = omega.get(g.id);
     if (w) { const v = Math.abs(w) * (g.params.m * g.params.z / 2) / 1000; rows.push(`<tr><td>Dişli çevre hızı</td><td>${F(v, 2)} m/s</td></tr>`); }
   }
-  // rezervuar boşalma süresi
+  // silindir boşalma süresi
   const cyl = links.find(l => l.type === 'cyl');
   if (cyl && motor.partId != null) {
     const piston = byId(cyl.a), haz = byId(cyl.b), { vlin } = solveSpeeds();
     const v = Math.abs(vlin.get(piston.id) || 0);
     if (v > 0 && haz) {
       const A = Math.PI * (haz.params.D / 2) ** 2, tSec = haz.params.L / v;
-      rows.push(`<tr><td>Toplam hacim</td><td>${F(A * haz.params.L, 0)} µL</td></tr>`);
+      rows.push(`<tr><td>Toplam hacim</td><td>${F(A * haz.params.L, 0)} mm³</td></tr>`);
       rows.push(`<tr><td>Boşalma süresi (tam)</td><td>${F(tSec, 0)} s = ${F(tSec / 60, 1)} dk</td></tr>`);
     }
   }
@@ -1857,8 +1894,8 @@ function computeDrive() {
   const gb = parts.find(p => p.type === 'gearbox');
   const df = parts.find(p => p.type === 'differential');
   const wheels = parts.filter(p => p.type === 'wheel');
-  // Araba varsa motor devir aralığını yükselt (gerçekçi motor devri), yoksa pompa aralığına dön
-  const rpmEl = $('rpm'), carMode = !!(gb || wheels.length), wantMax = carMode ? 6000 : 300;
+  // Araba varsa motor devir aralığını yükselt (gerçekçi motor devri), yoksa standart aralığa dön
+  const rpmEl = $('rpm'), carMode = !!(gb || wheels.length || parts.some(p => p.type === 'engine')), wantMax = carMode ? 6000 : 300;
   if (rpmEl && +rpmEl.max !== wantMax) {
     rpmEl.max = wantMax; rpmEl.step = carMode ? 25 : 5;
     if (+rpmEl.value > wantMax) { rpmEl.value = wantMax; motor.rpm = wantMax; $('rpmTxt').textContent = wantMax; }
@@ -1992,13 +2029,14 @@ function tick() {
       Pp.obj.position.copy(N.obj.position).addScaledVector(dir, l.o);
     }
   }
+  for (const p of parts) if (p.eng) animEngine(p);
   updatePump(vlin);
   orbit.update();
   renderer.render(scene, camera);
   renderPreviewInset();               // çizim modunda sağ-alt köşede canlı 3B önizleme
 }
 
-// Pompa analizi + sıvı görseli: piston yüzeyinin haznedeki konumundan debi/hacim hesabı (mm³ = µL)
+// Silindir analizi + sıvı görseli: piston yüzeyinin haznedeki konumundan debi/hacim hesabı (mm³)
 function updatePump(vlin) {
   let anyPump = false, q = 0, given = 0, left = 0;
   for (const l of links) {
@@ -2032,9 +2070,9 @@ function updatePump(vlin) {
   if (!anyPump) { box.style.display = 'none'; return; }
   box.style.display = '';
   if (frameNo % 10 === 0) {
-    $('pQ').textContent = fmt(q, 1) + ' µL/s';
-    $('pGiven').textContent = fmt(given, 1) + ' µL';
-    $('pLeft').textContent = fmt(left, 1) + ' µL';
+    $('pQ').textContent = fmt(q, 1) + ' mm³/s';
+    $('pGiven').textContent = fmt(given, 1) + ' mm³';
+    $('pLeft').textContent = fmt(left, 1) + ' mm³';
   }
 }
 
@@ -2076,7 +2114,7 @@ function applyState(d) {
   explodeBase = null;
   if ($('explode')) $('explode').value = 0, $('explodeTxt').textContent = 0;
   clearScene();
-  Object.assign(counters, { gear: 0, screw: 0, nut: 0, rack: 0, diffscrew: 0, piston: 0, hazne: 0, mil: 0, kasnak: 0, rulman: 0, kaplin: 0, kam: 0, sprocket: 0, yay: 0, kama: 0, pul: 0, wheel: 0, gearbox: 0, differential: 0, custom: 0 }, d.counters || {});
+  Object.assign(counters, { gear: 0, screw: 0, nut: 0, rack: 0, diffscrew: 0, piston: 0, hazne: 0, mil: 0, kasnak: 0, rulman: 0, kaplin: 0, kam: 0, sprocket: 0, yay: 0, kama: 0, pul: 0, wheel: 0, gearbox: 0, differential: 0, engine: 0, custom: 0 }, d.counters || {});
   for (const rec of d.parts || [])
     createPart({ ...rec, pos: new THREE.Vector3(...rec.pos) });
   nextId = d.nextId || (Math.max(0, ...parts.map(p => p.id)) + 1);
@@ -2098,16 +2136,25 @@ function load() {
   return true;
 }
 
-let undoStack = [];
+let undoStack = [], redoStack = [];
 function pushUndo() {
   undoStack.push(JSON.stringify(stateObj()));
   if (undoStack.length > 40) undoStack.shift();
+  redoStack.length = 0;
 }
 function undo() {
   if (!undoStack.length) return statusMsg('Geri alınacak işlem yok.', 'info');
+  redoStack.push(JSON.stringify(stateObj()));
   applyState(JSON.parse(undoStack.pop()));
   save();
   statusMsg('↩ Geri alındı.', 'info');
+}
+function redo() {
+  if (!redoStack.length) return statusMsg('İleri alınacak işlem yok.', 'info');
+  undoStack.push(JSON.stringify(stateObj()));
+  applyState(JSON.parse(redoStack.pop()));
+  save();
+  statusMsg('↪ İleri alındı.', 'info');
 }
 
 /* ================= 📖 Rehber ================= */
@@ -2183,7 +2230,14 @@ $('addHazne').onclick = () => {
   const p = addPart('hazne', { D: 10.5, L: 60, e: 2 });
   sel = [p.id]; refreshSel(); refreshAll(); save();
   const A = Math.PI * (p.params.D / 2) ** 2;
-  statusMsg(`✔ ${p.name} eklendi — kesit ${fmt(A,1)} mm² → 1 mm piston itmesi = ${fmt(A,1)} µL doz.`, 'ok');
+  statusMsg(`✔ ${p.name} eklendi — kesit ${fmt(A,1)} mm² → 1 mm piston itmesi = ${fmt(A,1)} mm³ hacim.`, 'ok');
+};
+$('addEngine').onclick = () => {
+  pushUndo();
+  const p = addPart('engine', { nc: 4, bore: 74.5, stroke: 80 });
+  sel = [p.id]; refreshSel(); refreshAll(); save();
+  const Vh = Math.PI / 4 * p.params.bore ** 2 * p.params.stroke * p.params.nc / 1000;
+  statusMsg(`✔ ${p.name} eklendi — ${p.params.nc} silindir, toplam ${fmt(Vh, 0)} cm³ ≈ ${fmt(Vh / 1000, 1)} L. ⚡ Motor bağla ve ▶ Çalıştır!`, 'ok');
 };
 function addSimplePart(type, params, msg) {
   pushUndo();
@@ -2224,6 +2278,7 @@ $('btnMotor').onclick = () => {
   refreshAll(); save();
 };
 $('btnUndo').onclick = undo;
+$('btnRedo').onclick = redo;
 
 function need2() {
   if (sel.length !== 2) { statusMsg('Önce <b>iki parça</b> seç: ağaçta veya sahnede sırayla tıkla.', 'info'); return null; }
@@ -2337,8 +2392,6 @@ $('btnSave').onclick = () => {
   setTimeout(() => URL.revokeObjectURL(a.href), 3000);
   statusMsg('💾 Montaj dosyaya kaydedildi (meksim-montaj.json).', 'ok');
 };
-// Doz hassasiyeti girdileri → anında yeniden hesapla
-for (const id of ['dEnc', 'dGbox', 'dUnit']) $(id).addEventListener('input', computeDose);
 for (const id of ['fTorq', 'fEta']) $(id).addEventListener('input', computeForce);
 for (const id of ['fMu', 'fTorq']) $(id).addEventListener('input', computeExtra);
 // Vites değiştir (aktarma organı)
@@ -2353,6 +2406,16 @@ function shiftGear(delta) {
 }
 $('gearUp').onclick = () => shiftGear(1);
 $('gearDown').onclick = () => shiftGear(-1);
+
+// 🔗 Paylaş: montaj URL'e gömülür (base64) — linki açan aynı montajı kurulu bulur
+const b64enc = s => { const b = new TextEncoder().encode(s); let r = ''; for (let i = 0; i < b.length; i += 8192) r += String.fromCharCode(...b.subarray(i, i + 8192)); return btoa(r); };
+const b64dec = s => new TextDecoder().decode(Uint8Array.from(atob(s), c => c.charCodeAt(0)));
+$('btnShare').onclick = async () => {
+  if (!parts.length) return statusMsg('⚠ Paylaşılacak parça yok — önce montaj kur.', 'warn');
+  const url = location.origin + location.pathname + '#a=' + encodeURIComponent(b64enc(JSON.stringify(stateObj())));
+  try { await navigator.clipboard.writeText(url); statusMsg(`🔗 Paylaşım linki panoya kopyalandı (${parts.length} parça). Arkadaşına gönder!`, 'ok'); }
+  catch { prompt('Linki kopyala:', url); }
+};
 
 // STL dışa aktarım: tek parça seçiliyse onu, değilse tüm montajı
 $('btnSTL').onclick = () => {
@@ -2408,16 +2471,12 @@ function buildReport() {
   L.push('');
 
   L.push('----- GİRDİLER -----');
-  L.push(`  Encoder: ${$('dEnc').value} sayım/devir`);
-  L.push(`  Motor redüktör oranı: ${$('dGbox').value}:1`);
-  L.push(`  1 Ünite: ${$('dUnit').value} µL`);
   L.push(`  Motor çıkış torku: ${$('fTorq').value} mNm`);
   L.push(`  Vida verimi η: ${$('fEta').value} %`);
   L.push(`  Sürtünme katsayısı μ: ${$('fMu').value}`);
   L.push('');
 
   const sections = [
-    ['🎯 DOZ HASSASİYETİ', 'doseOut'],
     ['⚙ TORK & KUVVET', 'forceOut'],
     ['📊 EK HESAPLAR', 'extraOut'],
   ];
@@ -2533,7 +2592,8 @@ addEventListener('keydown', e => {
     }
     return;
   }
-  if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
+  if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
   if (e.ctrlKey && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicatePart(); return; }
   switch (e.key) {
     case 'Escape': sel = []; refreshSel(); break;
@@ -2670,9 +2730,34 @@ function resetAssembly() {
   explodeBase = null;
   applyState({ parts: [], links: [], motor: { partId: null, rpm: 60, dir: 1 }, nextId: 1, counters: {} });
 }
-const PUMP_STATE = {"nextId":7,"counters":{"gear":2,"screw":0,"nut":1,"rack":0,"diffscrew":1,"piston":1,"hazne":1},"parts":[{"id":1,"type":"gear","name":"Pinyon","params":{"m":3,"z":18,"b":18,"d0":14,"color":9413567},"theta":12.39,"pos":[-56,90,0],"quat":[0,0,0,1]},{"id":2,"type":"gear","name":"Çark","params":{"m":3,"z":36,"b":18,"d0":14,"color":13215850},"theta":0,"pos":[25,90,0],"quat":[0,0,0,1]},{"id":3,"type":"diffscrew","name":"Diferansiyel Vida","params":{"d1":16,"P1":3,"L1":80,"d2":10,"P2":2,"L2":80},"theta":0,"pos":[25,90,25],"quat":[0,0,0,1]},{"id":4,"type":"nut","name":"Somun","params":{"d":10,"P":2,"t":13},"theta":0,"pos":[25,90,113.5],"quat":[0,0,0,1]},{"id":5,"type":"piston","name":"Piston","params":{"d":10,"L":50},"theta":0,"pos":[25,90,120],"quat":[0,0,0,1]},{"id":6,"type":"hazne","name":"Hazne","params":{"D":10.5,"L":60,"e":2},"theta":0,"pos":[25,90,166],"quat":[0,0,0,1]}],"links":[{"type":"gear","a":2,"b":1},{"type":"shaft","a":2,"b":3},{"type":"diff","a":3,"b":4,"s":88.5},{"type":"push","a":4,"b":5,"o":6.5},{"type":"cyl","a":5,"b":6,"given":0}],"motor":{"partId":1,"rpm":60,"dir":-1}};
 
 const TEMPLATES = [
+  { ad: '🏎 1.4 L — 4 Silindir Motor', ac: 'Krank mili, biyeller ve 4 piston içeride canlı çalışır. 74,5 mm çap × 80 mm strok ≈ 1395 cm³ (1.4 L).', rpm: 900, kur: () => {
+      resetAssembly();
+      const e = addPart('engine', { nc: 4, bore: 74.5, stroke: 80 });
+      e.obj.position.set(0, 130, -200);
+      motor.partId = e.id;
+  } },
+  { ad: '🚗 Normal Araba Nasıl Çalışır? — Tam Güç Zinciri', ac: 'Pistonlar kranka güç verir → volan/şaft → 5 vitesli kutu → diferansiyel → tekerler döner. Vitesi değiştir, yol hızı ve çekişi izle!', rpm: 2500, kur: () => {
+      resetAssembly();
+      const e = addPart('engine', { nc: 4, bore: 74.5, stroke: 80 });
+      const sh = addPart('mil', { d: 40, L: 300 });      // kardan şaftı
+      sh.name = 'Kardan Şaftı';
+      const gb = addPart('gearbox', { gears: 5, gear: 1, ratio1: 3.5, ratioTop: 0.85, D: 90, L: 150 });
+      const df = addPart('differential', { fd: 4.1, D: 180, track: 1000 });
+      const w1 = addPart('wheel', { D: 600, w: 180, rim: 340 });
+      const w2 = addPart('wheel', { D: 600, w: 180, rim: 340 });
+      e.obj.rotation.y = Math.PI / 2;
+      doDriveMate(e, sh); doDriveMate(sh, gb); doDriveMate(gb, df); doDriveMate(df, w1); doDriveMate(df, w2);
+      // gerçekçi yerleşim: güç zinciri X boyunca, aks (diferansiyel+tekerler) buna dik
+      e.obj.position.set(-1050, 300, 0);
+      sh.obj.quaternion.copy(e.obj.quaternion); sh.obj.position.set(-620, 300, 0);
+      gb.obj.quaternion.copy(e.obj.quaternion); gb.obj.position.set(-250, 300, 0);
+      df.obj.quaternion.identity(); df.obj.position.set(150, 300, 0);
+      w1.obj.quaternion.identity(); w1.obj.position.set(150, 300, 520);
+      w2.obj.quaternion.identity(); w2.obj.position.set(150, 300, -520);
+      motor.partId = e.id;
+  } },
   { ad: '⚙ Redüktör (2 dişli)', ac: 'Pinyon z18 → çark z36, çevrim oranı i=2. Motor pinyonda.', kur: () => {
       resetAssembly();
       const g1 = addPart('gear', { m: 3, z: 18, b: 18, d0: 14, color: GEAR_COLORS[0] });
@@ -3478,7 +3563,15 @@ $('tabAsm').onclick = () => setTab('asm');
 $('tabDesign').onclick = () => { setTab('design'); openPlaneChooser(true); };  // yeni parça → düzlem seçim ekranı
 
 /* ================= Başlat ================= */
-if (load()) {
+let _shared = null;
+if (location.hash.startsWith('#a=')) {
+  try { _shared = JSON.parse(b64dec(decodeURIComponent(location.hash.slice(3)))); } catch {}
+}
+if (_shared && _shared.parts && _shared.parts.length) {
+  applyState(_shared); save(); fitView();
+  history.replaceState(null, '', location.pathname);
+  statusMsg('🔗 Paylaşılan montaj yüklendi — üstünde çalışabilirsin!', 'ok');
+} else if (load()) {
   statusMsg('Kayıtlı montaj yüklendi. Parça eklemeye devam edebilirsin.', 'info');
   fitView();
   if (localStorage.getItem(GUIDE_KEY) !== '1' && !parts.length) showGuide(true);
