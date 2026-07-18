@@ -1,5 +1,5 @@
 /* MekSim service worker — çevrimdışı destek + güncellemeleri kaçırmama */
-const CACHE = 'meksim-v9';
+const CACHE = 'meksim-v12';
 const ASSETS = [
   './',
   './index.html',

@@ -333,6 +333,25 @@
     <button id="addDifferential" title="Diferansiyel — nihai tahvil + gücü iki tekere böler">⊗ Diferansiyel</button>
     <button id="addEngine" title="İçten yanmalı motor bloğu — krank, biyel ve pistonlar canlı çalışır">🏎 Motor Blok</button>
   </div>
+  <div class="sub" style="margin:12px 0 4px">🚙 Araç mekanizmaları:</div>
+  <div class="btnrow">
+    <button id="addEngine4" title="Sıra silindir kesit — krank, biyel, piston, supaplar (4 zamanlı çevrim)">🔥 4 Zamanlı Motor</button>
+    <button id="addSteering" title="Kremayer-pinyon direksiyon — simit döner, tekerler yönelir">☸ Direksiyon</button>
+  </div>
+  <div class="btnrow" style="margin-top:6px">
+    <button id="addSuspension" title="McPherson süspansiyon — yol darbesiyle amortisör/yay çalışır">〰 Süspansiyon</button>
+    <button id="addDiscbrake" title="Disk fren — fren pedalı % ile balatalar diski sıkar">🛑 Disk Fren</button>
+  </div>
+  <div class="btnrow" style="margin-top:6px">
+    <button id="addClutch" title="Kavrama (debriyaj) — pedal % ile balata kayar, kuvvet akışı kesilir">🔘 Kavrama (Debriyaj)</button>
+  </div>
+  <div class="btnrow" style="margin-top:6px">
+    <button id="addIgnition" title="Batarya-bobin-distribütör — distribütör motorun yarı hızında döner, ateşleme sırasına göre bujiler çakar">⚡ Ateşleme Sistemi</button>
+    <button id="addOilpump" title="Dişli tipi yağ pompası — kam milinden hareket alır, devir arttıkça basınç ayar valfi açılır">🛢️ Yağlama Sistemi</button>
+  </div>
+  <div class="btnrow" style="margin-top:6px">
+    <button id="addCooling" title="Radyatör-termostat-fan-su pompası — termostat açılma sıcaklığına göre soğutma devreye girer">🌡️ Soğutma Sistemi</button>
+  </div>
   </div><!-- /subParts -->
 
   <div class="subpage" id="subLinks">
@@ -395,6 +414,20 @@
       <tr><td>Debi (anlık)</td><td id="pQ">–</td></tr>
       <tr><td>Verilen hacim</td><td id="pGiven">–</td></tr>
       <tr><td>Kalan hacim</td><td id="pLeft">–</td></tr>
+    </table>
+  </div>
+  <div id="vehicle" style="display:none">
+    <h2>🚗 Araç Mekanizmaları</h2>
+    <table class="res">
+      <tr id="vEngineRow" style="display:none"><td>4Z Motor</td><td id="vEngine">–</td></tr>
+      <tr id="vFiringRow" style="display:none"><td></td><td id="vFiring">–</td></tr>
+      <tr id="vClutchRow" style="display:none"><td>Kavrama</td><td id="vClutch">–</td></tr>
+      <tr id="vBrakeRow" style="display:none"><td>Disk Fren</td><td id="vBrake">–</td></tr>
+      <tr id="vSteerRow" style="display:none"><td>Direksiyon</td><td id="vSteer">–</td></tr>
+      <tr id="vSuspRow" style="display:none"><td>Süspansiyon</td><td id="vSusp">–</td></tr>
+      <tr id="vIgnitionRow" style="display:none"><td>Ateşleme</td><td id="vIgnition">–</td></tr>
+      <tr id="vOilpumpRow" style="display:none"><td>Yağlama</td><td id="vOilpump">–</td></tr>
+      <tr id="vCoolingRow" style="display:none"><td>Soğutma</td><td id="vCooling">–</td></tr>
     </table>
   </div>
 
@@ -1074,11 +1107,587 @@ function animEngine(p) {
   }
 }
 
+/* ================= 🚙 Araç mekanizmaları (kompozit, kendi içinde animasyonlu) =================
+   Bu parçalarda tick() tüm gövdeyi döndürmez; iç alt-mesh'ler animateVehiclePart() ile theta'ya göre hareket eder. */
+
+// 4 zamanlı çevrimde ateşleme sırası + krank ofset adımı (OYDER: 720°/z)
+const FIRING = { 1: [1], 4: [1, 3, 4, 2], 6: [1, 5, 3, 6, 2, 4] };
+const engineZCount = zRaw => [1, 4, 6].reduce((a, b) => Math.abs(b - (zRaw || 1)) < Math.abs(a - (zRaw || 1)) ? b : a, 1);
+
+// 🔥 4 Zamanlı Motor: sıra (inline) — z silindir, ortak krank mili + her silindirde biyel/piston/silindir gömleği/supaplar
+function buildEngine4(p) {
+  const r = p.r, l = p.l, bore = p.bore;
+  const z = engineZCount(p.z);
+  const order = FIRING[z], step = 4 * Math.PI / z;
+  const spacing = bore * 1.35;
+  const g = new THREE.Group();
+  const mainMat = new THREE.MeshStandardMaterial({ color: p.color, metalness: 0.6, roughness: 0.4 });
+  const steelMat = new THREE.MeshStandardMaterial({ color: 0x9aa7b5, metalness: 0.85, roughness: 0.3 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x2b2f36, metalness: 0.3, roughness: 0.7 });
+
+  const pistonH = bore * 0.75;
+  const sleeveTop = r + l + pistonH * 0.5 + 4;
+  const sleeveBase = -bore * 0.1, sleeveH = sleeveTop - sleeveBase;
+
+  // Krank: ortak mil + her silindir için kendi açısal ofsetinde muylu/karşı ağırlık/pim (ofset ateşleme sırasından gelir)
+  const crank = new THREE.Group();
+  const shaftLen = spacing * z + bore * 0.6;
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(bore * 0.14, bore * 0.14, shaftLen, 20), steelMat);
+  shaft.rotation.x = Math.PI / 2; crank.add(shaft);
+
+  const cyls = [];
+  for (let i = 0; i < z; i++) {
+    const zpos = (i - (z - 1) / 2) * spacing;
+    const offset = -order.indexOf(i + 1) * step;
+
+    const throwGrp = new THREE.Group();
+    throwGrp.position.z = zpos; throwGrp.rotation.z = offset;
+    const journal = new THREE.Mesh(new THREE.CylinderGeometry(bore * 0.22, bore * 0.22, bore * 0.35, 24), steelMat);
+    journal.rotation.x = Math.PI / 2; throwGrp.add(journal);
+    const cw = new THREE.Mesh(new THREE.BoxGeometry(bore * 0.75, r * 1.35, bore * 0.28), steelMat);
+    cw.position.y = -r * 0.62; throwGrp.add(cw);
+    const pin = new THREE.Mesh(new THREE.CylinderGeometry(bore * 0.13, bore * 0.13, bore * 0.32, 20), steelMat);
+    pin.rotation.x = Math.PI / 2; pin.position.y = r; throwGrp.add(pin);
+    crank.add(throwGrp);
+
+    // Biyel: krank pimi ↔ piston pimi (her frame yeniden konumlanır/döndürülür)
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(bore * 0.09, bore * 0.09, l, 16), steelMat);
+    g.add(rod);
+
+    // Piston
+    const piston = new THREE.Mesh(new THREE.CylinderGeometry(bore / 2 * 0.97, bore / 2 * 0.97, pistonH, 28), mainMat);
+    piston.position.z = zpos; g.add(piston);
+
+    // Silindir gömleği: yarı saydam, önden açık kesit
+    const sleeve = new THREE.Mesh(
+      new THREE.CylinderGeometry(bore / 2 * 1.08, bore / 2 * 1.08, sleeveH, 28, 1, true, -Math.PI * 0.75, Math.PI * 1.5),
+      new THREE.MeshStandardMaterial({ color: 0xbfd6e4, transparent: true, opacity: 0.25, side: THREE.DoubleSide, metalness: 0.1, roughness: 0.2, depthWrite: false }));
+    sleeve.position.set(0, sleeveBase + sleeveH / 2, zpos); sleeve.userData.noShadow = true; g.add(sleeve);
+
+    // Silindir kapağı + buji
+    const head = new THREE.Mesh(new THREE.CylinderGeometry(bore / 2 * 1.15, bore / 2 * 1.15, bore * 0.22, 28), mainMat);
+    head.position.set(0, sleeveTop + bore * 0.11, zpos); g.add(head);
+    const plug = new THREE.Mesh(new THREE.CylinderGeometry(bore * 0.06, bore * 0.06, bore * 0.3, 12), darkMat);
+    plug.position.set(0, sleeveTop + bore * 0.35, zpos); g.add(plug);
+
+    // Yanma odası gazı — renk/opaklık faza göre animateVehiclePart'ta değişir
+    const gas = new THREE.Mesh(new THREE.CylinderGeometry(bore / 2 * 0.9, bore / 2 * 0.9, bore * 0.18, 24),
+      new THREE.MeshStandardMaterial({ color: 0x4da3ff, transparent: true, opacity: 0.35 }));
+    gas.position.set(0, sleeveTop - bore * 0.05, zpos); gas.userData.noShadow = true; g.add(gas);
+
+    // Supaplar: sol emme, sağ egzoz — hafif eğik, ~4mm açılır
+    const mkValve = () => {
+      const vg = new THREE.Group();
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(bore * 0.045, bore * 0.045, bore * 0.5, 10), steelMat);
+      stem.position.y = -bore * 0.25; vg.add(stem);
+      const vh = new THREE.Mesh(new THREE.CylinderGeometry(bore * 0.14, bore * 0.14, bore * 0.06, 16), steelMat);
+      vh.position.y = -bore * 0.5; vg.add(vh);
+      return vg;
+    };
+    const intake = mkValve(), exhaust = mkValve();
+    intake.position.set(-bore * 0.22, sleeveTop, zpos); intake.rotation.z = 0.25;
+    exhaust.position.set(bore * 0.22, sleeveTop, zpos); exhaust.rotation.z = -0.25;
+    g.add(intake, exhaust);
+
+    cyls.push({ rod, piston, intake, exhaust, gas, offset, zpos });
+  }
+  g.add(crank);
+
+  g.userData.anim = { crank, cyls, valveBaseY: sleeveTop, z };
+  return { content: g, r: bore / 2 * 1.25 + (z - 1) * spacing / 2 };
+}
+
+// 🛞 Kavrama (Debriyaj): volan + balatalı disk + baskı plakası + baskı yayları + muhafaza (mil ekseni = z)
+function buildClutch(p) {
+  const R = p.dd / 2, Rin = p.di / 2;
+  const g = new THREE.Group();
+  const mainMat = new THREE.MeshStandardMaterial({ color: p.color, metalness: 0.6, roughness: 0.4 });
+  const steelMat = new THREE.MeshStandardMaterial({ color: 0x9aa7b5, metalness: 0.85, roughness: 0.3 });
+  const frictionMat = new THREE.MeshStandardMaterial({ color: 0xa04a2a, metalness: 0.15, roughness: 0.85 });
+
+  const hFly = R * 0.32, hDisc = R * 0.05, hPlate = R * 0.2, retractMax = 6;
+  const zFly = 0, zDisc = hFly / 2 + hDisc / 2 + 0.3, zPlateRest = zDisc + hDisc / 2 + hPlate / 2 + 0.3;
+
+  // Volan: motor tarafı, kalın disk
+  const volan = new THREE.Mesh(new THREE.CylinderGeometry(R * 1.05, R * 1.05, hFly, 40), mainMat);
+  volan.rotation.x = Math.PI / 2; volan.position.z = zFly; g.add(volan);
+
+  // Balatalı disk: dd/di çaplı ince halka, sürtünme yüzeyi renkli
+  const discShape = new THREE.Shape(); discShape.absarc(0, 0, R, 0, Math.PI * 2, false);
+  const discHole = new THREE.Path(); discHole.absarc(0, 0, Rin, 0, Math.PI * 2, true); discShape.holes.push(discHole);
+  const discGeo = new THREE.ExtrudeGeometry(discShape, { depth: hDisc, bevelEnabled: false, curveSegments: 40 });
+  discGeo.translate(0, 0, -hDisc / 2);
+  const disc = new THREE.Mesh(discGeo, frictionMat);
+  disc.position.z = zDisc; g.add(disc);
+
+  // Baskı plakası
+  const plate = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.98, R * 0.98, hPlate, 40), steelMat);
+  plate.rotation.x = Math.PI / 2; plate.position.z = zPlateRest; g.add(plate);
+
+  // Baskı yayları: 6 adet, plaka çevresinde (buildYay ile aynı helis deseni)
+  const springs = [], springR = R * 0.72, springLen = R * 0.35;
+  for (let i = 0; i < 6; i++) {
+    const a2 = i / 6 * Math.PI * 2;
+    const n = 5, steps = n * 16, pts = [];
+    for (let k = 0; k <= steps; k++) { const t = k / steps, ang = t * n * 2 * Math.PI; pts.push(new THREE.Vector3(R * 0.03 * Math.cos(ang), R * 0.03 * Math.sin(ang), t * springLen)); }
+    const sgeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), steps, R * 0.012, 6, false);
+    const sm = new THREE.Mesh(sgeo, steelMat);
+    sm.position.set(Math.cos(a2) * springR, Math.sin(a2) * springR, zPlateRest + hPlate / 2);
+    g.add(sm); springs.push(sm);
+  }
+
+  // Kavrama muhafazası: yarı saydam dış kabuk (silindir gömleğiyle aynı açık-kesit deseni)
+  const coverLen = zPlateRest + hPlate / 2 + retractMax + springLen + 6 - (zFly - hFly / 2);
+  const cover = new THREE.Mesh(
+    new THREE.CylinderGeometry(R * 1.2, R * 1.2, coverLen, 32, 1, true, -Math.PI * 0.75, Math.PI * 1.5),
+    new THREE.MeshStandardMaterial({ color: 0xbfd6e4, transparent: true, opacity: 0.2, side: THREE.DoubleSide, metalness: 0.1, roughness: 0.2, depthWrite: false }));
+  cover.rotation.x = Math.PI / 2; cover.position.z = zFly - hFly / 2 + coverLen / 2; cover.userData.noShadow = true; g.add(cover);
+
+  // Ayırma bilyası (rulman) — pedal ile eksenel hareket eder (temsili)
+  const throwout = new THREE.Mesh(new THREE.SphereGeometry(R * 0.09, 16, 12), steelMat);
+  throwout.position.z = zPlateRest + hPlate / 2 + 4; g.add(throwout);
+
+  g.userData.anim = { volan, disc, plate, springs, throwout, zPlateRest, hPlate, retractMax, R, Rin };
+  return { content: g, r: R * 1.25 };
+}
+
+// ☸ Direksiyon: kremayer-pinyon + direksiyon mili/simiti + rot kolları + tekerler
+function buildSteering(p) {
+  const rp = p.rp, track = p.track;
+  const g = new THREE.Group();
+  const mainMat = new THREE.MeshStandardMaterial({ color: p.color, metalness: 0.6, roughness: 0.4 });
+  const steelMat = new THREE.MeshStandardMaterial({ color: 0x9aa7b5, metalness: 0.85, roughness: 0.3 });
+  const tireMat = new THREE.MeshStandardMaterial({ color: 0x1b1d22, metalness: 0.1, roughness: 0.85 });
+
+  // Kremayer: kayar grup, teker taraflarına rot kolları
+  const rackGrp = new THREE.Group();
+  rackGrp.add(new THREE.Mesh(new THREE.BoxGeometry(track * 1.15, rp * 0.9, rp * 0.9), steelMat));
+  const teeth = new THREE.Mesh(new THREE.BoxGeometry(track, rp * 0.25, rp * 0.3), new THREE.MeshStandardMaterial({ color: 0x2b2f36, metalness: 0.3, roughness: 0.7 }));
+  teeth.position.y = rp * 0.55; rackGrp.add(teeth);
+  for (const side of [-1, 1]) {
+    const tie = new THREE.Mesh(new THREE.CylinderGeometry(rp * 0.18, rp * 0.18, track * 0.22, 10), steelMat);
+    tie.rotation.z = Math.PI / 2; tie.position.x = side * (track / 2 + track * 0.11); rackGrp.add(tie);
+  }
+  g.add(rackGrp);
+
+  // Pinyon: ekseni Y, rack'in üstünde sabit
+  const pinion = new THREE.Group(); pinion.position.y = rp * 1.05;
+  pinion.add(new THREE.Mesh(new THREE.CylinderGeometry(rp, rp, rp * 1.3, 20), mainMat));
+  g.add(pinion);
+
+  // Direksiyon mili (yukarı-geriye eğik) + simit (torus + 3 kol), pinyon ile birlikte döner
+  const colLen = track * 0.35;
+  const columnGrp = new THREE.Group();
+  columnGrp.position.y = rp * 1.05; columnGrp.rotation.x = -0.55;
+  const colMesh = new THREE.Mesh(new THREE.CylinderGeometry(rp * 0.35, rp * 0.35, colLen, 16), steelMat);
+  colMesh.position.y = colLen / 2; columnGrp.add(colMesh);
+  const wheelSpin = new THREE.Group(); wheelSpin.position.y = colLen; columnGrp.add(wheelSpin);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(rp * 2.3, rp * 0.35, 10, 28), mainMat);
+  rim.rotation.x = Math.PI / 2; wheelSpin.add(rim);
+  for (let i = 0; i < 3; i++) {
+    const a = i / 3 * Math.PI * 2;
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(rp * 0.25, rp * 0.25, rp * 2.1), steelMat);
+    spoke.position.set(Math.sin(a) * rp * 1.05, 0, Math.cos(a) * rp * 1.05); spoke.rotation.y = a;
+    wheelSpin.add(spoke);
+  }
+  g.add(columnGrp);
+
+  // Kremayer uçlarında dik duran tekerler (yalnız yönelir, kaymaz)
+  const wheels = [-1, 1].map(side => {
+    const wg = new THREE.Group(); wg.position.x = side * (track / 2 + track * 0.22);
+    const tire = new THREE.Mesh(annulusZ(track * 0.13, track * 0.07, track * 0.09), tireMat);
+    tire.rotation.y = Math.PI / 2; wg.add(tire);
+    g.add(wg); return wg;
+  });
+
+  g.userData.anim = { rackGrp, pinion, wheelSpin, wheelL: wheels[0], wheelR: wheels[1], rp, track };
+  return { content: g, r: track / 2 + track * 0.35 };
+}
+
+// 〰 Süspansiyon (McPherson): teker+porya+alt salıncak + amortisör/yay + gövde
+function buildSuspension(p) {
+  const R = p.wd / 2;
+  const g = new THREE.Group();
+  const mainMat = new THREE.MeshStandardMaterial({ color: p.color, metalness: 0.6, roughness: 0.4 });
+  const steelMat = new THREE.MeshStandardMaterial({ color: 0x9aa7b5, metalness: 0.85, roughness: 0.3 });
+  const tireMat = new THREE.MeshStandardMaterial({ color: 0x1b1d22, metalness: 0.1, roughness: 0.85 });
+  const kolBoyu = 45, xPivot = -30, xWheel = xPivot + kolBoyu;
+
+  // Şasi (solda, yarı saydam, sabit)
+  const chassis = new THREE.Mesh(new THREE.BoxGeometry(50, 26, 40),
+    new THREE.MeshStandardMaterial({ color: 0xbfd6e4, transparent: true, opacity: 0.22, side: THREE.DoubleSide, metalness: 0.1, roughness: 0.2, depthWrite: false }));
+  chassis.position.set(xPivot - 15, R + 40, 0); chassis.userData.noShadow = true; g.add(chassis);
+
+  // Alt salıncak: pivotu şasi tarafında, dış ucu porya/tekeri taşır
+  const lowerArm = new THREE.Group(); lowerArm.position.set(xPivot, R, 0);
+  const armBar = new THREE.Mesh(new THREE.BoxGeometry(kolBoyu, R * 0.22, R * 0.3), steelMat);
+  armBar.position.x = kolBoyu / 2; lowerArm.add(armBar);
+  g.add(lowerArm);
+
+  const knuckle = new THREE.Group(); knuckle.position.x = kolBoyu; lowerArm.add(knuckle);
+  const stub = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.18, R * 0.18, R * 0.5, 16), steelMat);
+  stub.rotation.x = Math.PI / 2; knuckle.add(stub);
+  knuckle.add(new THREE.Mesh(annulusZ(R, R * 0.55, R * 0.5), tireMat));
+  knuckle.add(new THREE.Mesh(annulusZ(R * 0.56, R * 0.22, R * 0.3), new THREE.MeshStandardMaterial({ color: 0xb9c2cc, metalness: 0.85, roughness: 0.25 })));
+
+  // Amortisör: dış tüp (gövdeye sabit) + iç mil (girer/çıkar)
+  const strutFree = 45, xStrut = xWheel, outerLen = strutFree * 0.5, overlap = 6;
+  const topFixedY = R + strutFree + 10;
+  const outer = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.24, R * 0.24, outerLen, 16), mainMat);
+  outer.position.set(xStrut, topFixedY - outerLen / 2, 0); g.add(outer);
+  const inner = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.13, R * 0.13, 1, 14), steelMat);
+  inner.position.x = xStrut; g.add(inner);
+
+  // Yay: buildYay deseni, geometri Y ekseninde olacak şekilde bake edilir (tepe sabit)
+  const coilFree = strutFree * 0.8;
+  const yayMesh = buildYay({ D: R * 0.66, d: R * 0.066, L: coilFree, n: 5 }).content.children[0];
+  yayMesh.geometry.rotateX(Math.PI / 2);
+  yayMesh.position.set(xStrut, topFixedY, 0); g.add(yayMesh);
+
+  g.userData.anim = { lowerArm, inner, yayMesh, R, kolBoyu, topFixedY, outerLen, overlap, coilFree };
+  return { content: g, r: Math.abs(xWheel) + R + 20 };
+}
+
+// 🛑 Disk Fren: dönen disk (delikli) + porya/bijonlar + sabit kaliper + balatalar
+function buildDiscbrake(p) {
+  const R = p.dd / 2, t = p.dd * 0.08;
+  const g = new THREE.Group();
+  const diskMat = new THREE.MeshStandardMaterial({ color: p.color, metalness: 0.7, roughness: 0.35, emissive: 0x000000, emissiveIntensity: 0 });
+  const steelMat = new THREE.MeshStandardMaterial({ color: 0x9aa7b5, metalness: 0.85, roughness: 0.3 });
+  const padMat = new THREE.MeshStandardMaterial({ color: 0x2b2f36, metalness: 0.2, roughness: 0.8 });
+  const caliperMat = new THREE.MeshStandardMaterial({ color: 0x5f6b7a, metalness: 0.6, roughness: 0.45 });
+
+  // Disk + porya + bijonlar: theta ile tek blok döner
+  const disk = new THREE.Group();
+  const rotor = new THREE.Mesh(new THREE.CylinderGeometry(R, R, t, 40), diskMat);
+  rotor.rotation.x = Math.PI / 2; disk.add(rotor);
+  const holeMat = new THREE.MeshStandardMaterial({ color: 0x14161a });
+  for (let i = 0; i < 6; i++) {
+    const a = i / 6 * Math.PI * 2;
+    const hole = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.05, R * 0.05, t * 1.05, 8), holeMat);
+    hole.rotation.x = Math.PI / 2; hole.position.set(Math.cos(a) * R * 0.7, Math.sin(a) * R * 0.7, 0); disk.add(hole);
+  }
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.28, R * 0.28, t * 1.4, 24), steelMat);
+  hub.rotation.x = Math.PI / 2; disk.add(hub);
+  for (let i = 0; i < 5; i++) {
+    const a = i / 5 * Math.PI * 2;
+    const bolt = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.045, R * 0.045, t * 1.5, 8), steelMat);
+    bolt.rotation.x = Math.PI / 2; bolt.position.set(Math.cos(a) * R * 0.28, Math.sin(a) * R * 0.28, 0); disk.add(bolt);
+  }
+  g.add(disk);
+
+  // Kaliper (sabit, U kutu) + iki balata (diske bakan yüzler)
+  const caliper = new THREE.Mesh(new THREE.BoxGeometry(R * 0.5, R * 0.9, t * 3.2), caliperMat);
+  caliper.position.x = R * 0.82; g.add(caliper);
+  const padGeo = new THREE.BoxGeometry(R * 0.4, R * 0.55, 1);
+  const padL = new THREE.Mesh(padGeo, padMat), padR = new THREE.Mesh(padGeo, padMat);
+  padL.position.x = R * 0.82; padR.position.x = R * 0.82;
+  g.add(padL, padR);
+
+  g.userData.anim = { disk, rotor, padL, padR, t, R };
+  return { content: g, r: R + R * 0.5 };
+}
+
+// ⚡ Ateşleme Sistemi: batarya+bobin+distribütör (rotor motorun yarı hızında döner) + z buji, ateşleme sırasına göre çakar
+function buildIgnition(p) {
+  const z = engineZCount(p.z), order = FIRING[z];
+  const g = new THREE.Group();
+  const mainMat = new THREE.MeshStandardMaterial({ color: p.color, metalness: 0.6, roughness: 0.4 });
+  const steelMat = new THREE.MeshStandardMaterial({ color: 0x9aa7b5, metalness: 0.85, roughness: 0.3 });
+  const blackMat = new THREE.MeshStandardMaterial({ color: 0x1b1d22, metalness: 0.2, roughness: 0.8 });
+  const wireMat = new THREE.MeshStandardMaterial({ color: 0x2b2f36, metalness: 0.1, roughness: 0.9 });
+  const distR = 22, distH = 26, capY = distH + 3, spacing = 38;
+
+  // Batarya + kutuplar
+  const bat = new THREE.Mesh(new THREE.BoxGeometry(30, 40, 20), new THREE.MeshStandardMaterial({ color: 0x2b2f36, metalness: 0.3, roughness: 0.6 }));
+  bat.position.set(-110, 20, 0); g.add(bat);
+  const term = new THREE.CylinderGeometry(2, 2, 6, 10);
+  const plusP = new THREE.Mesh(term, steelMat); plusP.position.set(-116, 43, 0); g.add(plusP);
+  const minusP = new THREE.Mesh(term, steelMat); minusP.position.set(-104, 43, 0); g.add(minusP);
+
+  // Kontak anahtarı
+  const swKey = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 8, 16), blackMat);
+  swKey.rotation.x = Math.PI / 2; swKey.position.set(-75, 30, 0); g.add(swKey);
+
+  // Endüksiyon bobini
+  const coil = new THREE.Mesh(new THREE.CylinderGeometry(9, 9, 34, 20), blackMat);
+  coil.position.set(-40, 34, 0); g.add(coil);
+
+  // Distribütör gövdesi + kapak
+  const distBody = new THREE.Mesh(new THREE.CylinderGeometry(distR, distR, distH, 32), mainMat);
+  distBody.position.set(0, distH / 2, 0); g.add(distBody);
+  const distCap = new THREE.Mesh(new THREE.CylinderGeometry(distR * 0.88, distR * 0.88, 6, 32), blackMat);
+  distCap.position.set(0, capY, 0); g.add(distCap);
+
+  // Rotor (tevzi makarası): kapak içinde döner, kolu sırayla kablolara bakar
+  const rotor = new THREE.Group(); rotor.position.set(0, capY + 3, 0);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(distR * 1.25, 4, 6), new THREE.MeshStandardMaterial({ color: 0xb54a2a, metalness: 0.2, roughness: 0.7 }));
+  arm.position.x = distR * 0.5; rotor.add(arm);
+  g.add(rotor);
+
+  // z buji: motor silindir sırası gibi bir dizide, tırnak aralığında kıvılcım küresi
+  const rowStart = distR * 1.9;
+  const plugsX = []; for (let i = 0; i < z; i++) plugsX.push(rowStart + i * spacing);
+  const plugs = [], sparks = [];
+  for (let c = 0; c < z; c++) {
+    const px = plugsX[c];
+    const plug = new THREE.Mesh(new THREE.CylinderGeometry(3, 3.6, 16, 12), steelMat);
+    plug.position.set(px, 8, 0); g.add(plug); plugs.push(plug);
+    const spark = new THREE.Mesh(new THREE.SphereGeometry(1.6, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0xffe066, emissive: 0x000000, emissiveIntensity: 0 }));
+    spark.position.set(px, 0.5, 0); g.add(spark); sparks.push(spark);
+  }
+  // z yüksek gerilim kablosu: kapak çevresinde eşit açılı, ateşleme sırasına göre ilgili bujiye gider (sabit, rotor dönmez)
+  for (let i = 0; i < z; i++) {
+    const cylNo = order[i], px = plugsX[cylNo - 1];
+    const a2 = i / z * Math.PI * 2;
+    const a0 = new THREE.Vector3(Math.cos(a2) * distR * 0.75, capY, Math.sin(a2) * distR * 0.75);
+    const a1 = new THREE.Vector3(px, 16, 0);
+    const wire = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, a0.distanceTo(a1), 8), wireMat);
+    wire.position.copy(a0).add(a1).multiplyScalar(0.5);
+    wire.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), a1.clone().sub(a0).normalize());
+    g.add(wire);
+  }
+
+  g.userData.anim = { rotor, sparks, order, z, activeCyl: order[0] - 1 };
+  return { content: g, r: plugsX[z - 1] + 60 };
+}
+
+// 🛢️ Yağlama Sistemi: karter + süzgeç + dişli tipi pompa (iki kavraşmış dişli) + basınç ayar valfi + yağ kanalı
+function buildOilpump(p) {
+  const g = new THREE.Group();
+  const mainMat = new THREE.MeshStandardMaterial({ color: p.color, metalness: 0.6, roughness: 0.4 });
+  const steelMat = new THREE.MeshStandardMaterial({ color: 0x9aa7b5, metalness: 0.85, roughness: 0.3 });
+  const oilMat = new THREE.MeshStandardMaterial({ color: 0x2a1e12, transparent: true, opacity: 0.55, metalness: 0.2, roughness: 0.15 });
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0xbfd6e4, transparent: true, opacity: 0.22, side: THREE.DoubleSide, metalness: 0.1, roughness: 0.2, depthWrite: false });
+
+  // Karter (alttan, yarı saydam) + yağ seviyesi
+  const panW = 90, panH = 34, panD = 60;
+  const pan = new THREE.Mesh(new THREE.BoxGeometry(panW, panH, panD), glassMat);
+  pan.position.set(0, -panH / 2 - 6, 0); pan.userData.noShadow = true; g.add(pan);
+  const oilLevel = new THREE.Mesh(new THREE.BoxGeometry(panW * 0.92, panH * 0.5, panD * 0.92), oilMat);
+  oilLevel.position.set(0, -panH * 0.72 - 6, 0); oilLevel.userData.noShadow = true; g.add(oilLevel);
+
+  // Yağ süzgeci (emiş) — karter içinde
+  const strainer = new THREE.Mesh(new THREE.CylinderGeometry(9, 9, 5, 16), steelMat);
+  strainer.rotation.x = Math.PI / 2; strainer.position.set(-panW * 0.22, -panH - 8, 0); g.add(strainer);
+  const pickup = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 22, 10), steelMat);
+  pickup.position.set(-panW * 0.22, -panH * 0.5 - 6, 0); g.add(pickup);
+
+  // Dişli tipi pompa: iki kavraşmış dişli (zıt yönde döner)
+  const gm = 2.5, gz = 10, gb = 16, rp0 = gm * gz / 2;
+  const g1 = buildGear({ m: gm, z: gz, b: gb, d0: 6, color: p.color }).content;
+  const g2 = buildGear({ m: gm, z: gz, b: gb, d0: 6, color: 0x9aa7b5 }).content;
+  g1.position.set(-rp0, 8, 0); g2.position.set(rp0, 8, 0); g2.rotation.z = Math.PI / gz;
+  g.add(g1, g2);
+  const pumpHouse = new THREE.Mesh(new THREE.BoxGeometry(rp0 * 2 + gm * 5, rp0 * 2 + gm * 3, gb + 6), glassMat);
+  pumpHouse.position.set(0, 8, 0); pumpHouse.userData.noShadow = true; g.add(pumpHouse);
+
+  // Basınç ayar valfi: yaylı piston, ekseni X — basınç yükselince açılır (eksenel kayma)
+  const valveX = rp0 + 26, valveLen = 24;
+  const valveBody = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, valveLen, 16), steelMat);
+  valveBody.rotation.z = Math.PI / 2; valveBody.position.set(valveX, 8, 0); g.add(valveBody);
+  const valveSpool = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 4.5, 9, 14), mainMat);
+  valveSpool.rotation.z = Math.PI / 2; valveSpool.position.set(valveX - 6, 8, 0); g.add(valveSpool);
+  const vSpring = buildYay({ D: 9, d: 1.1, L: 13, n: 5 }).content.children[0];
+  vSpring.geometry.rotateY(Math.PI / 2);
+  vSpring.position.set(valveX + valveLen / 2 - 13, 8, 0); g.add(vSpring);
+
+  // Yağ kanalı: yukarı motora giden boru + akan yağ halkaları (θ ile döngüsel kayar)
+  const chanH = 60, chanY0 = 8 + valveLen / 2;
+  const chan = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, chanH, 12), steelMat);
+  chan.position.set(valveX, chanY0 + chanH / 2, 0); g.add(chan);
+  const ringMat = new THREE.MeshStandardMaterial({ color: 0x8a6a2a, metalness: 0.3, roughness: 0.5, transparent: true, opacity: 0.85 });
+  const rings = [];
+  for (let i = 0; i < 4; i++) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(4.2, 0.9, 6, 12), ringMat);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.set(valveX, chanY0 + i * (chanH / 4), 0);
+    g.add(ring); rings.push(ring);
+  }
+
+  g.userData.anim = { g1, g2, g2Off: Math.PI / gz, valveSpool, vSpring, valveX0: valveX - 6, valveOpenDX: 6, rings, chanY0, chanH };
+  return { content: g, r: valveX + 60 };
+}
+
+// 🌡️ Soğutma Sistemi: radyatör + su pompası (döner) + termostat (açılır/kapanır) + fan (döner) + hortumlar
+function buildCooling(p) {
+  const g = new THREE.Group();
+  const mainMat = new THREE.MeshStandardMaterial({ color: p.color, metalness: 0.6, roughness: 0.4 });
+  const steelMat = new THREE.MeshStandardMaterial({ color: 0x9aa7b5, metalness: 0.85, roughness: 0.3 });
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0xbfd6e4, transparent: true, opacity: 0.22, side: THREE.DoubleSide, metalness: 0.1, roughness: 0.2, depthWrite: false });
+
+  // Motor bloğu su ceketi (temsili, solda, yarı saydam)
+  const block = new THREE.Mesh(new THREE.BoxGeometry(60, 70, 50), glassMat);
+  block.position.set(-95, 35, 0); block.userData.noShadow = true; g.add(block);
+
+  // Radyatör: petek desenli ince kutu (sağda)
+  const radW = 12, radH = 80, radD = 60;
+  const radFrame = new THREE.Mesh(new THREE.BoxGeometry(radW, radH, radD), steelMat);
+  radFrame.position.set(95, 40, 0); g.add(radFrame);
+  const coreMat = new THREE.MeshStandardMaterial({ color: 0xc9a86a, metalness: 0.5, roughness: 0.4 });
+  for (let i = 0; i < 8; i++) {
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(radW * 1.05, radH * 0.92, 1.4), coreMat);
+    fin.position.set(95, 40, -radD / 2 + 4 + i * (radD - 8) / 7); g.add(fin);
+  }
+
+  // Fan: radyatör-motor arası, kanatlar X ekseni etrafında döner
+  const fanGrp = new THREE.Group(); fanGrp.position.set(55, 40, 0);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 6, 16), steelMat);
+  hub.rotation.z = Math.PI / 2; fanGrp.add(hub);
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0x2b2f36, metalness: 0.3, roughness: 0.7 });
+  for (let i = 0; i < 5; i++) {
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(2, 30, 10), bladeMat);
+    blade.position.y = 18;
+    const bg = new THREE.Group(); bg.add(blade); bg.rotation.x = i / 5 * Math.PI * 2;
+    fanGrp.add(bg);
+  }
+  g.add(fanGrp);
+
+  // Su pompası: motor altında, kanatlı çark (Z ekseni etrafında döner)
+  const pumpGrp = new THREE.Group(); pumpGrp.position.set(-95, -10, 0);
+  const pumpBody = new THREE.Mesh(new THREE.CylinderGeometry(14, 14, 16, 20), mainMat);
+  pumpBody.rotation.x = Math.PI / 2; pumpGrp.add(pumpBody);
+  const impeller = new THREE.Group();
+  for (let i = 0; i < 6; i++) {
+    const vane = new THREE.Mesh(new THREE.BoxGeometry(10, 2, 6), steelMat);
+    vane.position.x = 5;
+    const vg = new THREE.Group(); vg.add(vane); vg.rotation.z = i / 6 * Math.PI * 2; impeller.add(vg);
+  }
+  pumpGrp.add(impeller); g.add(pumpGrp);
+
+  // Termostat: üst hortum yolunda, tabla eksenel kayarak açılır (X ekseni = hortum yönü)
+  const thermoGrp = new THREE.Group(); thermoGrp.position.set(0, 78, 0);
+  const thermoBody = new THREE.Mesh(new THREE.CylinderGeometry(10, 10, 14, 16),
+    new THREE.MeshStandardMaterial({ color: 0x8a95a3, metalness: 0.6, roughness: 0.4 }));
+  thermoBody.rotation.z = Math.PI / 2; thermoGrp.add(thermoBody);
+  const flap = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 1.5, 16), steelMat);
+  flap.rotation.z = Math.PI / 2; thermoGrp.add(flap);
+  g.add(thermoGrp);
+
+  // Hortumlar: üst (motor→radyatör) + alt (radyatör→pompa)
+  const upperHose = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 78, 12), new THREE.MeshStandardMaterial({ color: 0x4da3ff, metalness: 0.1, roughness: 0.6 }));
+  upperHose.rotation.z = Math.PI / 2; upperHose.position.set(0, 78, 0); g.add(upperHose);
+  const lowerHose = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 78, 12), new THREE.MeshStandardMaterial({ color: 0x4da3ff, metalness: 0.1, roughness: 0.6 }));
+  lowerHose.rotation.z = Math.PI / 2; lowerHose.position.set(0, -10, 0); g.add(lowerHose);
+
+  // Üst hortumda akan su halkaları (yalnız termostat açıkken görünür/kayar)
+  const rings = [];
+  for (let i = 0; i < 5; i++) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(5.4, 1, 6, 12),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 }));
+    ring.rotation.y = Math.PI / 2;
+    ring.position.set(-39 + i * 19.5, 78, 0); g.add(ring); rings.push(ring);
+  }
+
+  g.userData.anim = { fanGrp, impeller, flap, bladeMat, upperHose, lowerHose, rings };
+  return { content: g, r: 170 };
+}
+
+// Vehicle parçalarının iç kinematiğini theta'dan hesaplayıp uygular (rebuildContent sonrası + tick'te çağrılır)
+function animateVehiclePart(p) {
+  const a = p.vAnim; if (!a) return;
+  const th = p.theta;
+  if (p.type === 'engine4') {
+    const { r, l, bore } = p.params;
+    a.crank.rotation.z = th;
+    const colors = [0x4da3ff, 0xffd24d, 0xff5533, 0x9aa0a6];
+    for (const cy of a.cyls) {
+      const thi = th + cy.offset;
+      const s = Math.sin(thi), c = Math.cos(thi);
+      const pinX = -r * s, pinY = r * c;
+      const pistonY = r * c + Math.sqrt(Math.max(l * l - r * r * s * s, 0)) + bore * 0.05;
+      cy.piston.position.y = pistonY;
+      cy.rod.position.set(pinX / 2, (pinY + pistonY) / 2, cy.zpos);
+      cy.rod.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(-pinX, pistonY - pinY, 0).normalize());
+      const cyc = ((thi % (4 * Math.PI)) + 4 * Math.PI) % (4 * Math.PI);
+      const phase = Math.min(3, Math.floor(cyc / Math.PI)); // 0 emme·1 sıkıştırma·2 iş·3 egzoz
+      const local = cyc - phase * Math.PI;
+      cy.intake.position.y = a.valveBaseY - (phase === 0 ? Math.sin(local) * 4 : 0);
+      cy.exhaust.position.y = a.valveBaseY - (phase === 3 ? Math.sin(local) * 4 : 0);
+      cy.gas.material.color.setHex(colors[phase]);
+      cy.gas.material.opacity = phase === 2 ? 0.6 : 0.35;
+    }
+  } else if (p.type === 'clutch') {
+    const pedal = clampN(p.params.pedal || 0, 0, 100);
+    const k = 1 - pedal / 100;
+    a.volan.rotation.z = th;
+    a.disc.rotation.z = th * k;
+    const retract = (pedal / 100) * a.retractMax;
+    a.plate.position.z = a.zPlateRest + retract;
+    a.throwout.position.z = a.zPlateRest + a.hPlate / 2 + 4 + retract;
+    const springScale = clampN(1 - (pedal / 100) * 0.3, 0.7, 1);
+    for (const s of a.springs) s.scale.z = springScale;
+  } else if (p.type === 'steering') {
+    const s = clampN(th * a.rp, -a.track * 0.15, a.track * 0.15);
+    a.rackGrp.position.x = s;
+    a.pinion.rotation.y = th; a.wheelSpin.rotation.y = th;
+    const yaw = Math.atan(s / 40);
+    a.wheelL.rotation.y = yaw; a.wheelR.rotation.y = yaw;
+  } else if (p.type === 'suspension') {
+    const dy = p.params.A * Math.sin(th);
+    a.lowerArm.rotation.z = Math.asin(clampN(dy / a.kolBoyu, -1, 1));
+    const innerTopY = a.topFixedY - a.outerLen + a.overlap, innerBottomY = a.R + dy;
+    a.inner.scale.y = Math.max(innerTopY - innerBottomY, 0.5);
+    a.inner.position.y = (innerTopY + innerBottomY) / 2;
+    a.yayMesh.scale.y = clampN((a.coilFree - dy) / a.coilFree, 0.15, 2.5);
+  } else if (p.type === 'discbrake') {
+    const fren = p.params.fren || 0;
+    a.disk.rotation.z = th;
+    const gap = 2.5 * (1 - fren / 100);
+    a.padL.position.z = a.t / 2 + gap; a.padR.position.z = -(a.t / 2 + gap);
+    const w = Math.abs(p.lastW || 0);
+    if (fren > 0 && w > 0.5) { a.rotor.material.emissive.setHex(0xff2200); a.rotor.material.emissiveIntensity = fren / 100; }
+    else { a.rotor.material.emissive.setHex(0x000000); a.rotor.material.emissiveIntensity = 0; }
+  } else if (p.type === 'ignition') {
+    const avansRad = (p.params.avans || 0) * Math.PI / 180;
+    const rotAngle = th / 2 + avansRad;
+    a.rotor.rotation.z = rotAngle;
+    const sector = 2 * Math.PI / a.z;
+    const idx = (((Math.floor(rotAngle / sector) % a.z) + a.z) % a.z);
+    const activeCyl = a.order[idx] - 1;
+    a.activeCyl = activeCyl;
+    for (let c = 0; c < a.z; c++) {
+      const on = c === activeCyl;
+      a.sparks[c].material.emissive.setHex(on ? 0xffffaa : 0x000000);
+      a.sparks[c].material.emissiveIntensity = on ? 1 : 0;
+    }
+  } else if (p.type === 'oilpump') {
+    a.g1.rotation.z = th;
+    a.g2.rotation.z = -th + a.g2Off;
+    const w = Math.abs(p.lastW || 0), n = w * 60 / (2 * Math.PI), pumpN = n / 2;
+    const P = Math.min(p.params.pmax, p.params.pmax * pumpN / 1500);
+    const open = clampN(P / p.params.pmax, 0, 1);
+    a.valveSpool.position.x = a.valveX0 + open * a.valveOpenDX;
+    a.vSpring.scale.x = clampN(1 - open * 0.35, 0.6, 1);
+    const flow = ((th * 8) % a.chanH + a.chanH) % a.chanH;
+    for (let i = 0; i < a.rings.length; i++) a.rings[i].position.y = a.chanY0 + (flow + i * (a.chanH / a.rings.length)) % a.chanH;
+  } else if (p.type === 'cooling') {
+    const T = p.params.T ?? 90, Ta = p.params.Ta ?? 82;
+    const open = T >= Ta, openFrac = clampN((T - Ta) / 8, 0, 1);
+    a.flap.position.x = open ? openFrac * 5 : 0;
+    const fanMul = T > Ta + 15 ? 2.4 : (open ? 1 : 0.3);
+    a.fanGrp.rotation.x = th * fanMul;
+    a.impeller.rotation.z = th;
+    const hoseCol = new THREE.Color(0x4da3ff);
+    if (open) hoseCol.lerp(new THREE.Color(0xff5533), clampN((T - Ta) / 15, 0, 1));
+    a.upperHose.material.color.copy(hoseCol);
+    a.lowerHose.material.color.copy(hoseCol);
+    a.bladeMat.color.setHex(T > Ta + 15 ? 0xff3322 : 0x2b2f36);
+    const flow = ((th * 8) % 78 + 78) % 78;
+    for (let i = 0; i < a.rings.length; i++) {
+      a.rings[i].visible = open;
+      a.rings[i].position.x = -39 + (flow + i * 19.5) % 78;
+    }
+  }
+}
+
 /* ================= Parça yönetimi ================= */
 let parts = [], links = [], motor = { partId: null, rpm: 60, dir: 1 };
 let sel = [], running = false, nextId = 1;
-const counters = { gear: 0, screw: 0, nut: 0, rack: 0, diffscrew: 0, piston: 0, hazne: 0, mil: 0, kasnak: 0, rulman: 0, kaplin: 0, kam: 0, sprocket: 0, yay: 0, kama: 0, pul: 0, wheel: 0, gearbox: 0, differential: 0, engine: 0, custom: 0 };
+const counters = { gear: 0, screw: 0, nut: 0, rack: 0, diffscrew: 0, piston: 0, hazne: 0, mil: 0, kasnak: 0, rulman: 0, kaplin: 0, kam: 0, sprocket: 0, yay: 0, kama: 0, pul: 0, wheel: 0, gearbox: 0, differential: 0, engine: 0, custom: 0, engine4: 0, steering: 0, suspension: 0, discbrake: 0, clutch: 0, ignition: 0, oilpump: 0, cooling: 0 };
 const GEAR_COLORS = [0x8fa3bf, 0xc9a86a, 0x9fbf8f, 0xbf8f9f, 0x8fbfba];
+const VEHICLE_TYPES = new Set(['engine4', 'steering', 'suspension', 'discbrake', 'clutch', 'ignition', 'oilpump', 'cooling']);
 
 const PARAM_DEFS = {
   gear:  [['m', 'Modül', 'mm', 0.5], ['z', 'Diş sayısı', '', 1], ['b', 'Genişlik', 'mm', 1], ['d0', 'Delik çapı', 'mm', 1]],
@@ -1103,9 +1712,17 @@ const PARAM_DEFS = {
   differential: [['fd', 'Nihai tahvil', ':1', 0.1], ['D', 'Taç dişli çapı', 'mm', 2], ['track', 'Aks açıklığı', 'mm', 5]],
   engine: [['nc', 'Silindir sayısı', '', 1], ['bore', 'Silindir çapı (bore)', 'mm', 0.5], ['stroke', 'Strok', 'mm', 0.5]],
   custom: [['depth', 'Derinlik', 'mm', 1]],
+  engine4: [['r', 'Krank yarıçapı', 'mm', 1], ['l', 'Biyel boyu', 'mm', 1], ['bore', 'Silindir çapı', 'mm', 1], ['z', 'Silindir sayısı', '', 1]],
+  steering: [['rp', 'Pinyon yarıçapı', 'mm', 0.5], ['track', 'Kremayer boyu', 'mm', 5]],
+  suspension: [['A', 'Yol darbesi genliği', 'mm', 1], ['wd', 'Teker çapı', 'mm', 2]],
+  discbrake: [['dd', 'Disk çapı', 'mm', 2], ['fren', 'Fren pedalı', '%', 5]],
+  clutch: [['dd', 'Balata dış çapı', 'mm', 2], ['di', 'Balata iç çapı', 'mm', 2], ['F', 'Baskı yay kuvveti', 'N', 50], ['mu', 'Sürtünme katsayısı', '', 0.05], ['pedal', 'Debriyaj pedalı', '%', 5]],
+  ignition: [['z', 'Silindir sayısı', '', 1], ['avans', 'Ateşleme avansı', '°KMA', 1], ['V', 'Bobin gerilimi', 'kV', 1]],
+  oilpump: [['q', 'Pompa debisi', 'cm³/dev', 0.5], ['pmax', 'Basınç valfi limiti', 'bar', 0.5]],
+  cooling: [['T', 'Motor su sıcaklığı', '°C', 1], ['Ta', 'Termostat açılma sıc.', '°C', 1]],
 };
-const TYPE_NAMES = { gear: 'Dişli', rack: 'Kramayer', screw: 'Vida', nut: 'Somun', diffscrew: 'Dif. Vida', piston: 'Piston', hazne: 'Hazne', mil: 'Mil', kasnak: 'Kasnak', rulman: 'Rulman', kaplin: 'Kaplin', kam: 'Kam', sprocket: 'Zincir Dişlisi', yay: 'Yay', kama: 'Kama', pul: 'Pul', wheel: 'Teker', gearbox: 'Vites Kutusu', differential: 'Diferansiyel', engine: 'Motor Blok', custom: 'Özel Parça' };
-const TYPE_ICONS = { gear: '⚙', rack: '▬', screw: '🔩', nut: '⬡', diffscrew: '🌀', piston: '⚪', hazne: '🛢', mil: '┃', kasnak: '⊙', rulman: '◎', kaplin: '╪', kam: '◑', sprocket: '✲', yay: '∿', kama: '▭', pul: '○', wheel: '🛞', gearbox: '🔀', differential: '⊗', engine: '🏎', custom: '🧩' };
+const TYPE_NAMES = { gear: 'Dişli', rack: 'Kramayer', screw: 'Vida', nut: 'Somun', diffscrew: 'Dif. Vida', piston: 'Piston', hazne: 'Hazne', mil: 'Mil', kasnak: 'Kasnak', rulman: 'Rulman', kaplin: 'Kaplin', kam: 'Kam', sprocket: 'Zincir Dişlisi', yay: 'Yay', kama: 'Kama', pul: 'Pul', wheel: 'Teker', gearbox: 'Vites Kutusu', differential: 'Diferansiyel', engine: 'Motor Blok', custom: 'Özel Parça', engine4: '4 Zamanlı Motor', steering: 'Direksiyon', suspension: 'Süspansiyon', discbrake: 'Disk Fren', clutch: 'Kavrama (Debriyaj)', ignition: 'Ateşleme Sistemi', oilpump: 'Yağlama Sistemi', cooling: 'Soğutma Sistemi' };
+const TYPE_ICONS = { gear: '⚙', rack: '▬', screw: '🔩', nut: '⬡', diffscrew: '🌀', piston: '⚪', hazne: '🛢', mil: '┃', kasnak: '⊙', rulman: '◎', kaplin: '╪', kam: '◑', sprocket: '✲', yay: '∿', kama: '▭', pul: '○', wheel: '🛞', gearbox: '🔀', differential: '⊗', engine: '🏎', custom: '🧩', engine4: '🔥', steering: '☸', suspension: '〰', discbrake: '🛑', clutch: '🔘', ignition: '⚡', oilpump: '🛢️', cooling: '🌡️' };
 const rpOf = g => g.params.m * g.params.z / 2;
 
 function createPart(rec) {
@@ -1158,6 +1775,14 @@ function rebuildContent(part) {
               : part.type === 'differential' ? buildDifferential(part.params)
               : part.type === 'engine' ? buildEngine(part.params)
               : part.type === 'custom' ? buildCustom(part.params)
+              : part.type === 'engine4' ? buildEngine4(part.params)
+              : part.type === 'steering' ? buildSteering(part.params)
+              : part.type === 'suspension' ? buildSuspension(part.params)
+              : part.type === 'discbrake' ? buildDiscbrake(part.params)
+              : part.type === 'clutch' ? buildClutch(part.params)
+              : part.type === 'ignition' ? buildIgnition(part.params)
+              : part.type === 'oilpump' ? buildOilpump(part.params)
+              : part.type === 'cooling' ? buildCooling(part.params)
               : buildNut(part.params);
   built.content.traverse(o => {
     o.userData.partId = part.id;
@@ -1167,7 +1792,9 @@ function rebuildContent(part) {
   part.r = built.r;
   part.colBox = built.box || null;
   part.eng = built.eng || null;
-  part.spin.rotation.z = part.theta;
+  part.vAnim = built.content.userData.anim || null;
+  part.spin.rotation.z = VEHICLE_TYPES.has(part.type) ? 0 : part.theta;
+  if (part.vAnim) animateVehiclePart(part);
   applyPitchVisibility();
 }
 
@@ -1280,7 +1907,7 @@ function refreshSelBox() {
   if (!p) return;
   $('selName').textContent = p.name;
   $('btnMotor').textContent = motor.partId === p.id ? '⚡ Motoru Kaldır' : '⚡ Motor Bağla';
-  $('btnMotor').disabled = !isRot(p.type);
+  $('btnMotor').disabled = !isRot(p.type) && !VEHICLE_TYPES.has(p.type);
   $('editSketchRow').style.display = p.type === 'custom' ? '' : 'none';
   const holder = $('params'); holder.innerHTML = '';
   for (const [keyName, label, unit, step] of PARAM_DEFS[p.type]) {
@@ -1680,6 +2307,17 @@ function partVols(p) {
       const b = p.colBox;
       return b ? [{ kind: 'box', x0: b.min.x, x1: b.max.x, y0: b.min.y, y1: b.max.y, z0: b.min.z, z1: b.max.z }] : [];
     }
+    case 'engine4': {
+      const zc = engineZCount(q.z), spacing = q.bore * 1.35, half = (zc - 1) * spacing / 2 + q.bore * 0.65;
+      return [{ kind: 'box', x0: -q.bore * 0.75, x1: q.bore * 0.75, y0: -q.bore * 0.5, y1: q.r + q.l + q.bore * 1.2, z0: -half, z1: half }];
+    }
+    case 'steering': return [{ kind: 'box', x0: -q.track * 0.75, x1: q.track * 0.75, y0: -q.rp * 1.5, y1: q.rp * 1.05 + q.track * 0.35 + q.rp * 3, z0: -q.rp * 3, z1: q.rp * 3 }];
+    case 'suspension': return [{ kind: 'box', x0: -95, x1: 35 + q.wd / 2, y0: -10, y1: q.wd / 2 + q.A + 75, z0: -q.wd / 2, z1: q.wd / 2 }];
+    case 'discbrake': return [{ kind: 'box', x0: -q.dd * 0.7, x1: q.dd * 0.7, y0: -q.dd * 0.55, y1: q.dd * 0.55, z0: -q.dd * 0.1, z1: q.dd * 0.1 }];
+    case 'clutch': return [{ kind: 'cyl', r: q.dd / 2 * 1.2, z0: -q.dd * 0.05, z1: q.dd * 0.55 }];
+    case 'ignition': return [{ kind: 'box', x0: -140, x1: 150, y0: -5, y1: 100, z0: -30, z1: 30 }];
+    case 'oilpump': return [{ kind: 'box', x0: -70, x1: 150, y0: -45, y1: 95, z0: -30, z1: 30 }];
+    case 'cooling': return [{ kind: 'box', x0: -135, x1: 115, y0: -40, y1: 95, z0: -35, z1: 35 }];
   }
   return [];
 }
@@ -1982,7 +2620,10 @@ function tick() {
   if (running) {
     for (const p of parts) {
       const w = omega.get(p.id);
-      if (w) { p.theta += w * dt; p.spin.rotation.z = p.theta; }
+      if (w) {
+        if (VEHICLE_TYPES.has(p.type)) { p.lastW = w; p.theta += w * dt * (p.type === 'discbrake' ? (1 - (p.params.fren || 0) / 100) : 1); animateVehiclePart(p); }
+        else { p.theta += w * dt; p.spin.rotation.z = p.theta; }
+      }
     }
     for (const l of links) {
       if (l.type === 'screw') {
@@ -2031,6 +2672,7 @@ function tick() {
   }
   for (const p of parts) if (p.eng) animEngine(p);
   updatePump(vlin);
+  updateVehicle();
   orbit.update();
   renderer.render(scene, camera);
   renderPreviewInset();               // çizim modunda sağ-alt köşede canlı 3B önizleme
@@ -2076,6 +2718,85 @@ function updatePump(vlin) {
   }
 }
 
+// Araç mekanizmaları analizi: motor/faz, fren, direksiyon açısı, süspansiyon sıkışması — animateVehiclePart ile aynı formüller
+function updateVehicle() {
+  const engines = parts.filter(p => p.type === 'engine4');
+  const brakes = parts.filter(p => p.type === 'discbrake');
+  const steers = parts.filter(p => p.type === 'steering');
+  const susps = parts.filter(p => p.type === 'suspension');
+  const clutches = parts.filter(p => p.type === 'clutch');
+  const ignitions = parts.filter(p => p.type === 'ignition');
+  const oilpumps = parts.filter(p => p.type === 'oilpump');
+  const coolings = parts.filter(p => p.type === 'cooling');
+  const box = $('vehicle');
+  if (!engines.length && !brakes.length && !steers.length && !susps.length && !clutches.length && !ignitions.length && !oilpumps.length && !coolings.length) { box.style.display = 'none'; return; }
+  box.style.display = '';
+  if (frameNo % 10 !== 0) return;
+  if (engines.length) {
+    const e = engines[0], { r, bore } = e.params, th = e.theta;
+    const zc = e.vAnim ? e.vAnim.cyls.length : engineZCount(e.params.z);
+    const cyc = ((th % (4 * Math.PI)) + 4 * Math.PI) % (4 * Math.PI);
+    const phase = Math.min(3, Math.floor(cyc / Math.PI));
+    const names = ['Emme', 'Sıkıştırma', 'İş', 'Egzoz'], colors = ['#4da3ff', '#ffd24d', '#ff5533', '#9aa0a6'];
+    const vol = zc * Math.PI / 4 * bore * bore * 2 * r / 1000;
+    $('vEngineRow').style.display = '';
+    $('vEngine').innerHTML = `<b style="color:${colors[phase]}">${names[phase]}</b> · Strok: ${fmt(2 * r, 1)} mm · Silindir: ${zc} · Toplam hacim: ${fmt(vol, 1)} cc`;
+    $('vFiringRow').style.display = '';
+    $('vFiring').textContent = `Ateşleme sırası: ${FIRING[zc].join('-')}`;
+  } else { $('vEngineRow').style.display = 'none'; $('vFiringRow').style.display = 'none'; }
+  if (clutches.length) {
+    const cl = clutches[0], { dd, di, F, mu } = cl.params, pedal = clampN(cl.params.pedal || 0, 0, 100);
+    const k = 1 - pedal / 100, Rm = (dd + di) / 4, Mt = mu * F * k * Rm / 1000;
+    $('vClutchRow').style.display = '';
+    $('vClutch').innerHTML = `İletilebilir tork: ${fmt(Mt, 1)} N·m · Kavrama: %${fmt(100 - pedal, 0)}` +
+      (pedal >= 100 ? ' · <b style="color:#ff5533">Kuvvet akışı kesildi</b>' : '');
+  } else $('vClutchRow').style.display = 'none';
+  if (brakes.length) {
+    const d = brakes[0], fren = d.params.fren || 0;
+    $('vBrakeRow').style.display = '';
+    $('vBrake').textContent = `Fren: %${fmt(fren, 0)} → disk devri %${fmt(100 - fren, 0)}`;
+  } else $('vBrakeRow').style.display = 'none';
+  if (steers.length) {
+    const s = steers[0], a = s.vAnim;
+    $('vSteerRow').style.display = '';
+    if (a) {
+      const sh = clampN(s.theta * a.rp, -a.track * 0.15, a.track * 0.15);
+      const yaw = Math.atan(sh / 40) * 180 / Math.PI;
+      $('vSteer').textContent = `Teker açısı: ${fmt(yaw, 1)}°`;
+    }
+  } else $('vSteerRow').style.display = 'none';
+  if (susps.length) {
+    const su = susps[0], dy = su.params.A * Math.sin(su.theta);
+    $('vSuspRow').style.display = '';
+    $('vSusp').textContent = `Sıkışma: ${fmt(dy, 1)} mm`;
+  } else $('vSuspRow').style.display = 'none';
+  if (ignitions.length) {
+    const ig = ignitions[0], a = ig.vAnim;
+    $('vIgnitionRow').style.display = '';
+    const activeCylNo = a ? a.activeCyl + 1 : 1;
+    $('vIgnition').textContent = `Ateşleme: ${fmt(ig.params.V, 0)} kV · Avans: ${fmt(ig.params.avans, 0)}° · Distribütör devri: motorun yarısı · Ateşleyen: ${activeCylNo}. silindir`;
+  } else $('vIgnitionRow').style.display = 'none';
+  if (oilpumps.length) {
+    const op = oilpumps[0], w = Math.abs(op.lastW || 0), n = w * 60 / (2 * Math.PI), pumpN = n / 2;
+    const Q = op.params.q * pumpN / 1000;
+    const P = Math.min(op.params.pmax, op.params.pmax * pumpN / 1500);
+    $('vOilpumpRow').style.display = '';
+    let html = `Yağ debisi: ${fmt(Q, 2)} L/dak · Basınç: ${fmt(P, 2)} bar`;
+    if (P >= op.params.pmax) html += ` · <span style="color:#9aa0a6">(basınç valfi açık — fazla yağ kartere döner)</span>`;
+    if (P < 0.5) html += ` · <b style="color:#ff5533">⚠ yağ basıncı düşük</b>`;
+    $('vOilpump').innerHTML = html;
+  } else $('vOilpumpRow').style.display = 'none';
+  if (coolings.length) {
+    const co = coolings[0], T = co.params.T, Ta = co.params.Ta;
+    $('vCoolingRow').style.display = '';
+    let html = T < Ta
+      ? `<b style="color:#4da3ff">Termostat KAPALI (${fmt(T, 0)}°C) — motor ısınıyor</b>`
+      : `<b style="color:#3ecf6e">Termostat AÇIK (${fmt(T, 0)}°C) — su radyatöre akıyor</b>`;
+    if (T > Ta + 15) html += ` · <b style="color:#ff5533">⚠ Fan devrede — aşırı ısınma (${fmt(T, 0)}°C)</b>`;
+    $('vCooling').innerHTML = html;
+  } else $('vCoolingRow').style.display = 'none';
+}
+
 function warnEndstop(hit, part) {
   if (hit && !endstopWarned) {
     statusMsg(`⚠ ${part.name} <b>strok sonuna</b> ulaştı — "Yön" ile ters çevir veya durdur.`, 'warn');
@@ -2114,7 +2835,7 @@ function applyState(d) {
   explodeBase = null;
   if ($('explode')) $('explode').value = 0, $('explodeTxt').textContent = 0;
   clearScene();
-  Object.assign(counters, { gear: 0, screw: 0, nut: 0, rack: 0, diffscrew: 0, piston: 0, hazne: 0, mil: 0, kasnak: 0, rulman: 0, kaplin: 0, kam: 0, sprocket: 0, yay: 0, kama: 0, pul: 0, wheel: 0, gearbox: 0, differential: 0, engine: 0, custom: 0 }, d.counters || {});
+  Object.assign(counters, { gear: 0, screw: 0, nut: 0, rack: 0, diffscrew: 0, piston: 0, hazne: 0, mil: 0, kasnak: 0, rulman: 0, kaplin: 0, kam: 0, sprocket: 0, yay: 0, kama: 0, pul: 0, wheel: 0, gearbox: 0, differential: 0, engine: 0, custom: 0, engine4: 0, steering: 0, suspension: 0, discbrake: 0, clutch: 0, ignition: 0, oilpump: 0, cooling: 0 }, d.counters || {});
   for (const rec of d.parts || [])
     createPart({ ...rec, pos: new THREE.Vector3(...rec.pos) });
   nextId = d.nextId || (Math.max(0, ...parts.map(p => p.id)) + 1);
@@ -2269,6 +2990,22 @@ $('addGearbox').onclick = () => addSimplePart('gearbox', { gears: 5, gear: 1, ra
   p => `✔ ${p.name} eklendi (5 vites) — motoru buna bağla, çıkışını diferansiyele "⚙→ Aktar".`);
 $('addDifferential').onclick = () => addSimplePart('differential', { fd: 4.1, D: 180, track: 1000 },
   p => `✔ ${p.name} eklendi (nihai tahvil 4.1) — girişini vitese, iki çıkışını tekere "⚙→ Aktar".`);
+$('addEngine4').onclick = () => addSimplePart('engine4', { r: 18, l: 55, bore: 36, z: 1, color: 0x7f8b99 },
+  p => `✔ ${p.name} eklendi — motor bağlanınca 4 zamanlı çevrimi (emme/sıkıştırma/iş/egzoz) canlanır.`);
+$('addSteering').onclick = () => addSimplePart('steering', { rp: 8, track: 120, color: 0x8f9aa8 },
+  p => `✔ ${p.name} eklendi — motor bağlanınca simit döner, kremayer kayar, tekerler yönelir.`);
+$('addSuspension').onclick = () => addSimplePart('suspension', { A: 12, wd: 55, color: 0x5f6b7a },
+  p => `✔ ${p.name} eklendi — motor bağlanınca yol darbesiyle amortisör/yay çalışır.`);
+$('addDiscbrake').onclick = () => addSimplePart('discbrake', { dd: 60, fren: 0, color: 0x8a95a3 },
+  p => `✔ ${p.name} eklendi — "Fren pedalı %" arttıkça balatalar diski sıkar, disk yavaşlar.`);
+$('addClutch').onclick = () => addSimplePart('clutch', { dd: 200, di: 130, F: 4000, mu: 0.3, pedal: 0, color: 0x707b88 },
+  p => `✔ ${p.name} eklendi — "Debriyaj pedalı %" arttıkça balata kayar, %100'de kuvvet akışı kesilir.`);
+$('addIgnition').onclick = () => addSimplePart('ignition', { z: 4, avans: 10, V: 22, color: 0x394b59 },
+  p => `✔ ${p.name} eklendi — motor bağlanınca distribütör yarı hızda döner, bujiler ateşleme sırasına göre çakar.`);
+$('addOilpump').onclick = () => addSimplePart('oilpump', { q: 12, pmax: 4, color: 0x6b5b3a },
+  p => `✔ ${p.name} eklendi — motor bağlanınca dişli pompa döner, devir arttıkça basınç ayar valfi açılır.`);
+$('addCooling').onclick = () => addSimplePart('cooling', { T: 90, Ta: 82, color: 0x3a6b6b },
+  p => `✔ ${p.name} eklendi — su sıcaklığı termostat açılma noktasına ulaşınca su radyatöre akar, aşırı ısınmada fan devreye girer.`);
 
 $('btnDel').onclick = () => { if (sel.length) { pushUndo(); deletePart(sel[0]); } };
 $('btnMotor').onclick = () => {
@@ -2797,6 +3534,86 @@ const TEMPLATES = [
       gb.obj.rotation.y = Math.PI / 2;                 // aktarma eksenini yatay (X) yay → yan yana görünüm
       doDriveMate(gb, df); doDriveMate(df, w1); doDriveMate(df, w2);
       motor.partId = gb.id;
+  } },
+  { ad: '🔥 4 Zamanlı Motor (4 Silindir)', ac: 'Krank-biyel-piston + supaplar, ateşleme sırası 1-3-4-2; emme/sıkıştırma/iş/egzoz fazlarını izle.', rpm: 40, kur: () => {
+      resetAssembly();
+      const e = addPart('engine4', { r: 18, l: 55, bore: 36, z: 4, color: 0x7f8b99 });
+      e.obj.position.set(0, 90, 0);
+      motor.partId = e.id;
+  } },
+  { ad: '🛞 Kavrama (Debriyaj)', ac: 'Pedal %0-100 arası kuvvet akışını keser; iletilebilir tork hesaplanır.', rpm: 60, kur: () => {
+      resetAssembly();
+      const c = addPart('clutch', { dd: 200, di: 130, F: 4000, mu: 0.3, pedal: 0, color: 0x707b88 });
+      c.obj.position.set(0, 90, 0);
+      motor.partId = c.id;
+  } },
+  { ad: '🕹️ Direksiyon Sistemi (Kremayer-Pinyon)', ac: 'Simit döner, kremayer kayar, tekerler yönelir.', rpm: 8, kur: () => {
+      resetAssembly();
+      const s = addPart('steering', { rp: 8, track: 120, color: 0x8f9aa8 });
+      s.obj.position.set(0, 90, 0);
+      motor.partId = s.id;
+  } },
+  { ad: '🔩 Süspansiyon (Yay-Amortisör)', ac: 'Yol darbesiyle amortisör iner-çıkar, yay sıkışır.', rpm: 30, kur: () => {
+      resetAssembly();
+      const s = addPart('suspension', { A: 12, wd: 55, color: 0x5f6b7a });
+      s.obj.position.set(0, 90, 0);
+      motor.partId = s.id;
+  } },
+  { ad: '🛑 Disk Fren', ac: 'Fren pedalına basılınca balatalar diski sıkar, disk yavaşlar.', rpm: 120, kur: () => {
+      resetAssembly();
+      const d = addPart('discbrake', { dd: 60, fren: 30, color: 0x8a95a3 });
+      d.obj.position.set(0, 90, 0);
+      motor.partId = d.id;
+  } },
+  { ad: '🚗 Komple Araç: Motor→Kavrama→Şanzıman→Diferansiyel→Teker', ac: '4Z motor→kavrama→vites→diferansiyel→iki teker aktarımı; pedal ile kuvvet akışını kes.', rpm: 800, kur: () => {
+      resetAssembly();
+      const e = addPart('engine4', { r: 18, l: 55, bore: 36, z: 4, color: 0x7f8b99 });
+      const cl = addPart('clutch', { dd: 200, di: 130, F: 4000, mu: 0.3, pedal: 0, color: 0x707b88 });
+      const gb = addPart('gearbox', { gears: 5, gear: 1, ratio1: 3.5, ratioTop: 0.85, D: 90, L: 150 });
+      const df = addPart('differential', { fd: 4.1, D: 180, track: 1000 });
+      const w1 = addPart('wheel', { D: 600, w: 180, rim: 340 });
+      const w2 = addPart('wheel', { D: 600, w: 180, rim: 340 });
+      e.obj.position.set(-650, 250, 0); e.obj.rotation.y = Math.PI / 2;
+      cl.obj.position.set(-525, 250, 0); cl.obj.rotation.y = Math.PI / 2;
+      gb.obj.position.set(-400, 250, 0);
+      gb.obj.rotation.y = Math.PI / 2;                 // aktarma eksenini yatay (X) yay → yan yana görünüm
+      links.push({ type: 'shaft', a: e.id, b: cl.id });  // konumları bozmasın diye doShaftMate yerine doğrudan link
+      links.push({ type: 'shaft', a: cl.id, b: gb.id });
+      doDriveMate(gb, df); doDriveMate(df, w1); doDriveMate(df, w2);
+      motor.partId = e.id;
+  } },
+  { ad: '⚡ Ateşleme Sistemi', ac: 'Batarya→bobin→distribütör; distribütör motorun yarı hızında döner, ateşleme sırasına göre bujiler çakar.', rpm: 60, kur: () => {
+      resetAssembly();
+      const ig = addPart('ignition', { z: 4, avans: 10, V: 22, color: 0x394b59 });
+      ig.obj.position.set(0, 90, 0);
+      motor.partId = ig.id;
+  } },
+  { ad: '🛢️ Yağlama Sistemi', ac: 'Dişli tipi yağ pompası kam milinden hareket alır; devir arttıkça basınç ayar valfi açılır.', rpm: 200, kur: () => {
+      resetAssembly();
+      const op = addPart('oilpump', { q: 12, pmax: 4, color: 0x6b5b3a });
+      op.obj.position.set(0, 90, 0);
+      motor.partId = op.id;
+  } },
+  { ad: '🌡️ Soğutma Sistemi', ac: 'Termostat açılma sıcaklığına ulaşınca su radyatöre akar; aşırı ısınmada fan devreye girer.', rpm: 150, kur: () => {
+      resetAssembly();
+      const co = addPart('cooling', { T: 90, Ta: 82, color: 0x3a6b6b });
+      co.obj.position.set(0, 90, 0);
+      motor.partId = co.id;
+  } },
+  { ad: '🔧 Komple Motor: Ateşleme + Yağlama + Soğutma', ac: '4Z motor + ateşleme + yağlama + soğutma; hepsi krank miline bağlı, motor devriyle birlikte çalışır.', rpm: 60, kur: () => {
+      resetAssembly();
+      const e = addPart('engine4', { r: 18, l: 55, bore: 36, z: 4, color: 0x7f8b99 });
+      const ig = addPart('ignition', { z: 4, avans: 10, V: 22, color: 0x394b59 });
+      const op = addPart('oilpump', { q: 12, pmax: 4, color: 0x6b5b3a });
+      const co = addPart('cooling', { T: 90, Ta: 82, color: 0x3a6b6b });
+      e.obj.position.set(-500, 250, 0);
+      ig.obj.position.set(-260, 250, 0);
+      op.obj.position.set(-40, 150, 0);
+      co.obj.position.set(220, 250, 0);
+      links.push({ type: 'shaft', a: e.id, b: ig.id });  // konumları bozmasın diye doShaftMate yerine doğrudan link
+      links.push({ type: 'shaft', a: e.id, b: op.id });
+      links.push({ type: 'shaft', a: e.id, b: co.id });
+      motor.partId = e.id;
   } },
 ];
 
